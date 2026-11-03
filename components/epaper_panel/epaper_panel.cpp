@@ -80,16 +80,11 @@ esp_err_t EpaperPanel::Initialize()
     }
 
     if (previous_framebuffer_ == nullptr) {
-        // Same reasoning: this one is memcpy'd into the SPI buffer for the 0x26 plane on
-        // every partial, and memcmp'd against the live framebuffer.
-        previous_framebuffer_ =
-            static_cast<uint8_t*>(heap_caps_malloc(config_.buffer_len, MALLOC_CAP_INTERNAL |
-                                                                           MALLOC_CAP_8BIT));
-        if (previous_framebuffer_ == nullptr) {
-            ESP_LOGW(kTag, "Shadow framebuffer falling back to PSRAM");
-            previous_framebuffer_ = static_cast<uint8_t*>(
-                heap_caps_malloc(config_.buffer_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-        }
+        // Keep the retained 48 KB image in PSRAM, leaving internal RAM for
+        // task stacks and DMA. XiP keeps the PSRAM cache available during flash
+        // writes; WriteBytes still stages each transfer through internal DMA RAM.
+        previous_framebuffer_ = static_cast<uint8_t*>(
+            heap_caps_malloc(config_.buffer_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         if (previous_framebuffer_ == nullptr) {
             ESP_LOGE(kTag, "Failed to allocate %d-byte retained framebuffer", config_.buffer_len);
             return ESP_ERR_NO_MEM;
