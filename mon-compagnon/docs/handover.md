@@ -5,6 +5,10 @@
 Dépôt : `https://github.com/rorom62157-cloud/folloup-sticky`.
 Branche : `work/mon-compagnon-v1`. Projet : sous-dossier `mon-compagnon/`.
 
+Checkpoint de code publié et vérifié : `255366c0b934478c026798408fba81795746c98b`
+(équivalent des 55 fichiers suivis du checkpoint local `5f01fa0`). Les commits
+documentaires suivants peuvent compléter ce reçu ; récupérer la tête de branche.
+
 ```sh
 git clone --branch work/mon-compagnon-v1 --single-branch https://github.com/rorom62157-cloud/folloup-sticky.git
 cd folloup-sticky/mon-compagnon

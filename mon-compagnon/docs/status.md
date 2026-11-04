@@ -4,6 +4,8 @@
 
 ### Publication et passage à un autre ordinateur
 
+**Publication réussie et vérifiée :** commit distant `255366c0b934478c026798408fba81795746c98b`, descendant direct de `8c7e28c79a92924299eac13a743ba2d27474d2fc`, branche `work/mon-compagnon-v1`. Les 55 fichiers suivis du checkpoint local `5f01fa0` sont présents avec contenu et modes identiques ; 36 fichiers ajoutés/modifiés par rapport au distant précédent. Les 674 entrées hors sous-projet sont préservées. Ref distant relu après mise à jour, sans force. Aucun secret détecté par la vérification des motifs de credentials ; aucun binaire/audio/cache publié. Le présent reçu documentaire est un complément au checkpoint de code, sans modification fonctionnelle.
+
 Romain demande explicitement le 4 novembre de publier toutes les mises à jour de code et documentation vers `rorom62157-cloud/folloup-sticky`, branche `work/mon-compagnon-v1`, sous `mon-compagnon/`, pour reprise sur un autre ordinateur. Cette demande apporte l'autorisation de publication qui manquait au checkpoint historique. Le head distant contrôlé avant publication est `8c7e28c79a92924299eac13a743ba2d27474d2fc`. Publication par arbre/commit descendants de ce head, sans remplacement de l'amont ni modification de main.
 
 Guide de reprise : `docs/handover.md`. Les deux tentatives Computer Use échouent avec `Sky Computer Use service startup request failed`, puis l'outil disparaît de la session. Aucune action Arduino IDE effectuée. Sur le nouvel ordinateur, revérifier les capacités et le port, sans supposer le même blocage. Installation de `p` toujours à confirmer, aucune nouvelle preuve matérielle.

@@ -47,3 +47,7 @@ Root implemented HTTP policy, ESP-IDF transport, embedding/build pipeline and do
 | review_launcher correction recheck | gpt-6.1-sol / high | Read-only final launcher/build/preflight | No remaining findings, shell syntax passes; real serial/flash not exercised; terminated |
 
 All missions bounded by explicit inputs, exclusive ownership, deliverable, checks and termination. No Astra, no idle loops, no remote publication. Root attempted normal serial open twice (second explicitly requested by Romain), both EPERM before communication; no alternate access route used. Device installation of `p` remains unconfirmed.
+
+## Publication autorisée et reprise sur un autre ordinateur
+
+Demande explicite de Romain : publier toutes les mises à jour de code et documentation. Root a préparé `docs/handover.md`, actualisé README/changelog/status et contrôlé les 55 fichiers texte (284328 octets avant reçu, aucun motif de credential détecté). Checkpoint local `5f01fa0` publié par GitHub API en commit distant `255366c0b934478c026798408fba81795746c98b`, parent `8c7e28c`, sous `mon-compagnon/` uniquement. Vérification d'arbre : tous les contenus/modes du projet identiques aux fichiers suivis locaux ; 674 entrées amont préservées. Ref mis à jour sans force avec contrôle du head attendu, puis relu. Aucun sous-agent requis pour ce transfert documentaire ; aucun flash ni action IDE. Le refus historique de publication n'est plus le dernier état : la nouvelle demande explicite a permis cette publication réussie.
