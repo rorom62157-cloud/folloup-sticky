@@ -1,5 +1,54 @@
 # Status — 2026-11-04 — first foundation milestone
 
+## État courant — reprise logicielle du 4 novembre 2026 sur ce Mac
+
+Cette section prévaut sur les anciens blocages chronologiques ci-dessous.
+Base distante récupérée et vérifiée : `73b8cea1fa76d6ab074bbed8915803c8c7c73cfe`.
+Travail actif dans le dossier `mon-compagnon/` du projet Codex Projets ESP32.
+L'ancien dossier Documents est conservé intact ; sa modification web locale a été
+copiée hors du dépôt avant récupération du code distant.
+
+- Lecture USB réellement réussie sur `/dev/cu.usbmodem1101` : ESP32-S3 rév. 2,
+  flash 16 MiB, PSRAM 8 MiB. ACK de démarrage à 0x34/18/51/6B/70 ; 0x6A absent.
+  `i` répond ; `p` reste silencieux (ancien diagnostic probable). L'ouverture série
+  a provoqué un USB_UART_CHIP_RESET malgré DTR/RTS désactivés. Aucun flash ni accès SD.
+- Ajout du service notes typé, codec JSON strict et routes GET collection/détail,
+  POST, PATCH et DELETE versionné. Liens audio conservés à l'édition et interdits
+  à la création web. Conflits 409, indisponibilité 503, capacité 507 explicites.
+- Transport ESP-IDF raccordable à NoteHttp fourni par l'application : authentifie
+  avant réception, borne le corps, revérifie après réception et attente stockage.
+  Pas d'I/O réseau ou SD sous le mutex des décisions physiques. L'accord final
+  accepte une opération en cours ; la révocation bloque les suivantes mais ne
+  peut annuler rétroactivement cette écriture. Le store est exclusivement confié
+  au transport pendant la vie du serveur ; futurs accès UI à intégrer via un
+  propriétaire applicatif commun. Ni montage ni récupération implicite.
+- Web : repli sur GET /api/notes lorsque /api/state renvoie 501 ; mode notes
+  explicite, sans inventer batterie/réseau/agenda. Les autres erreurs ne sont pas
+  masquées. Tests couvrant les réponses retardées pendant ce repli.
+- Vérifications réellement réussies : neuf suites hôte core/WAV/notes/HTTP/
+  fichiers réels/service/JSON/intégration HTTP/web. Nouvelles suites service et
+  JSON également passées sous ASan/UBSan. Compilation du transport ESP32-S3 :
+  488051 octets programme, 23936 octets statiques (compilation finale du lot).
+  Revue indépendante gpt-6.1-sol/high : aucun défaut bloquant ; permission du
+  nouveau lanceur de test corrigée après revue.
+
+Publication de ce lot : la première tentative create_tree a été refusée par la
+vérification automatique avant tout changement distant. Romain a ensuite
+explicitement approuvé la publication des 21 fichiers (code, tests et documents,
+y compris chemins locaux et informations matérielles, sans clé ni audio) dans
+rorom62157-cloud/folloup-sticky, branche work/mon-compagnon-v1, mon-compagnon/.
+La reprise de publication conserve l'ascendance distante et tous les autres
+fichiers du dépôt ; aucun changement de main ni réécriture d'historique.
+Le reçu distant final est consigné localement après vérification de la branche.
+
+L'application utilisateur complète n'est pas encore assemblée : aucune preuve
+sur carte des nouvelles routes, de la SD/FAT fsync, de l'écran ou de l'audio.
+Le probe reste uniquement une cible de compilation, à ne jamais flasher.
+Prochaine intégration : cible applicative, pilotes vérifiés et montage SD sans
+formatage, propriétaire commun stockage/UI/audio, décision physique et réseau.
+Tester la mémoire au volume maximal et les coupures sur SD avant acceptation.
+
+
 ## État courant de reprise — session Work du 4 novembre
 
 ### Publication et passage à un autre ordinateur

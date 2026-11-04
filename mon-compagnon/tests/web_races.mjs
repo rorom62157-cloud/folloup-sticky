@@ -144,4 +144,34 @@ const response = value => ({ok:true,status:200,json:async()=>value});
   assert.ok(f.client.editing(), 'Failed save leaves draft open');
   assert.match(f.find(el => el.attrs.id === 'feedback').textContent, /Stockage indisponible/);
 }
+{
+  const f = fixture();
+  const refresh = f.client.refresh();
+  f.requests[0].resolve({ok:false,status:501,json:async()=>({message:'État indisponible'})});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.requests[1].path, '/api/notes');
+  f.requests[1].resolve(response({notes:[{id:'n1',title:'Idée',text:'Texte',pinned:false,version:1}]}));
+  await refresh;
+  assert.equal(f.client.state().notes_only, true);
+  assert.equal(f.client.state().notes[0].title, 'Idée');
+  assert.equal(f.client.state().network, undefined, 'Limited mode does not invent network state');
+}
+{
+  const f = fixture();
+  const older = f.client.refresh();
+  f.requests[0].resolve({ok:false,status:501,json:async()=>({message:'État indisponible'})});
+  await new Promise(resolve => setImmediate(resolve));
+  const newer = f.client.refresh();
+  f.requests[2].resolve(response({revision:2})); await newer;
+  f.requests[1].resolve(response({notes:[]})); await older;
+  assert.equal(f.client.state().revision, 2, 'Stale notes fallback cannot replace newer state');
+}
+{
+  const f = fixture();
+  const refresh = f.client.refresh();
+  f.requests[0].resolve({ok:false,status:503,json:async()=>({message:'Stockage indisponible'})});
+  await refresh;
+  assert.equal(f.requests.length, 1, 'Only unimplemented state enables fallback');
+  assert.equal(f.client.state(), null);
+}
 console.log('web_races: all assertions passed (transport fixture, not browser validation)');

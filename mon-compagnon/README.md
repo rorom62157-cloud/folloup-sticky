@@ -24,6 +24,9 @@ Assistant personnel sur Waveshare ESP32-S3-ePaper-3.97, écran non tactile 800 �
 ./scripts/test-storage.sh
 sh scripts/test-notes.sh
 sh scripts/test-http.sh
+sh scripts/test-note-service.sh
+sh scripts/test-note-json.sh
+sh scripts/test-note-http.sh
 sh scripts/test-note-files.sh
 python3 tests/diagnostic_preflight_tests.py
 sh scripts/build-http-probe.sh
@@ -46,3 +49,9 @@ Référence : https://github.com/rorom62157-cloud/folloup-sticky/tree/folloup-wa
 Livraison : branche `work/mon-compagnon-v1`, dossier `mon-compagnon/`, sans modification de l'application amont. Le dossier local de travail a un historique indépendant car le terminal ne peut pas cloner GitHub ; les publications passent par l'API en conservant l'historique distant. Ne jamais forcer un push de l'historique local vers le dépôt de référence.
 
 Aucune clé API, aucun token, aucun audio personnel ne doit être ajouté au dépôt.
+
+
+Les routes de notes peuvent désormais être raccordées à un NoteStore persistant
+par `NoteHttp` ; le web accepte un mode notes seul. Voir l'état courant de
+`docs/status.md` pour les conditions d'intégration. Aucun probe n'est une image
+applicative à flasher.

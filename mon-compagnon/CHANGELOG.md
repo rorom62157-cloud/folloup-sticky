@@ -27,3 +27,11 @@
 - Independent review corrections: reopen pending recordings and signal screen-only sleep changes.
 
 Not a release of the complete assistant firmware; no on-device application validation yet.
+
+
+## Reprise logicielle — notes HTTP persistantes
+
+Service notes, JSON strict, dispatch CRUD versionné et raccordement transport
+ESP-IDF avec backend explicite. Mode notes seul dans le web quand l'état complet
+est indisponible. Tests de persistance sur fichiers réels, autorisation, Unicode,
+conflits et courses de repli web ; compilation ESP32-S3 réussie. Aucun flash.

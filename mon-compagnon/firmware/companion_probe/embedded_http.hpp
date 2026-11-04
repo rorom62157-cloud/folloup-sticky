@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "http_access.hpp"
+#include "note_http.hpp"
 #include "web_assets.hpp"
 
 namespace compagnon {
@@ -15,14 +16,16 @@ namespace compagnon {
 // return 501 rather than a fabricated application state.
 class EmbeddedHttp {
 public:
-    explicit EmbeddedHttp(std::string origin) : access_(session_, std::move(origin)) {
+    explicit EmbeddedHttp(std::string origin, NoteHttp* notes = nullptr)
+        : access_(session_, std::move(origin)), notes_(notes) {
         mutex_ = xSemaphoreCreateMutex();
+        notes_mutex_ = xSemaphoreCreateMutex();
     }
-    ~EmbeddedHttp() { if (server_) httpd_stop(server_); if (mutex_) vSemaphoreDelete(mutex_); }
+    ~EmbeddedHttp() { if (server_) httpd_stop(server_); if (mutex_) vSemaphoreDelete(mutex_); if (notes_mutex_) vSemaphoreDelete(notes_mutex_); }
     EmbeddedHttp(const EmbeddedHttp&) = delete;
     EmbeddedHttp& operator=(const EmbeddedHttp&) = delete;
     esp_err_t begin() {
-        if (!mutex_ || server_) return ESP_ERR_INVALID_STATE;
+        if (!mutex_ || !notes_mutex_ || server_) return ESP_ERR_INVALID_STATE;
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.max_req_hdr_len = 2048;
         config.max_uri_len = 256;
@@ -91,7 +94,8 @@ private:
         return r;
     }
     static esp_err_t send(httpd_req_t* req, const Response& r) {
-        const char* status = r.code == 200 ? "200 OK" : r.code == 202 ? "202 Accepted" :
+        const char* status = r.code == 200 ? "200 OK" : r.code == 201 ? "201 Created" :
+            r.code == 404 ? "404 Not Found" : r.code == 507 ? "507 Insufficient Storage" : r.code == 202 ? "202 Accepted" :
             r.code == 204 ? "204 No Content" : r.code == 400 ? "400 Bad Request" :
             r.code == 401 ? "401 Unauthorized" : r.code == 403 ? "403 Forbidden" :
             r.code == 409 ? "409 Conflict" : r.code == 413 ? "413 Content Too Large" :
@@ -108,6 +112,7 @@ private:
     }
     static esp_err_t dispatch(httpd_req_t* req) {
         auto& self = *static_cast<EmbeddedHttp*>(req->user_ctx);
+        if (std::strncmp(req->uri, "/api/notes", 10) == 0) return self.dispatchNotes(req);
         // Receive only the bounded bootstrap body here, without holding UI/session
         // mutex. Authorization is re-evaluated after receive before any mutation.
         bool bootstrap_body = false;
@@ -124,6 +129,51 @@ private:
         Response response = self.handle(req, bootstrap_body);
         xSemaphoreGive(self.mutex_);
         // Socket writes may block: never keep the physical-input mutex here.
+        return send(req, response);
+    }
+    HttpAccessDecision authorizeNotes(httpd_req_t* req) {
+        for (const char* name : {"Host", "Origin", "Sec-Fetch-Site", "Cookie", "X-CSRF-Token", "Content-Type"})
+            if (httpd_req_get_hdr_value_len(req, name) > 1024) return {400};
+        const std::string uri(req->uri);
+        const char* method = req->method == HTTP_GET ? "GET" : req->method == HTTP_POST ? "POST" :
+                             req->method == HTTP_PATCH ? "PATCH" : "DELETE";
+        return access_.check({method, uri.substr(0, uri.find('?')), header(req, "Host"),
+            header(req, "Origin"), header(req, "Sec-Fetch-Site"), header(req, "Cookie"),
+            header(req, "X-CSRF-Token"), req->content_len, header(req, "Content-Type") == "application/json"}, now());
+    }
+    esp_err_t dispatchNotes(httpd_req_t* req) {
+        // Authenticate before receiving private bodies or waiting for storage.
+        if (!lock()) return send(req, error(503, req->content_len != 0));
+        auto allowed = authorizeNotes(req);
+        xSemaphoreGive(mutex_);
+        if (!allowed.allowed()) return send(req, error(allowed.status, req->content_len != 0));
+        if (!notes_) return send(req, error(501, req->content_len != 0));
+        std::string body(req->content_len, '\0');
+        std::size_t received = 0;
+        while (received < body.size()) {
+            const int count = httpd_req_recv(req, &body[received], body.size() - received);
+            if (count <= 0) return ESP_FAIL;
+            received += static_cast<std::size_t>(count);
+        }
+        if (xSemaphoreTake(notes_mutex_, pdMS_TO_TICKS(20)) != pdTRUE) return send(req, error(503));
+        // Recheck after receive/storage wait. Acceptance here is the operation's
+        // authorization point: revocation cannot cancel an already accepted write.
+        if (!lock()) { xSemaphoreGive(notes_mutex_); return send(req, error(503)); }
+        allowed = authorizeNotes(req);
+        xSemaphoreGive(mutex_);
+        if (!allowed.allowed()) { xSemaphoreGive(notes_mutex_); return send(req, error(allowed.status)); }
+        const std::string uri(req->uri);
+        const auto split = uri.find('?');
+        const char* method = req->method == HTTP_GET ? "GET" : req->method == HTTP_POST ? "POST" :
+                             req->method == HTTP_PATCH ? "PATCH" : "DELETE";
+        auto result = notes_->handle(method, uri.substr(0, split),
+            split == std::string::npos ? std::string{} : uri.substr(split + 1), body);
+        xSemaphoreGive(notes_mutex_);
+        if (result.mutated && lock()) {
+            access_.acceptedMutation(header(req, "Cookie"), now());
+            xSemaphoreGive(mutex_);
+        }
+        Response response; response.code = result.status; response.body = std::move(result.body);
         return send(req, response);
     }
     Response handle(httpd_req_t* req, bool bootstrap_body) {
@@ -179,6 +229,8 @@ private:
     }
     CompanionSession session_;
     HttpAccess access_;
+    NoteHttp* notes_ = nullptr; // Lifetime exceeds server; exclusive store ownership while active.
+    SemaphoreHandle_t notes_mutex_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
     httpd_handle_t server_ = nullptr;
     std::string pending_cookie_;

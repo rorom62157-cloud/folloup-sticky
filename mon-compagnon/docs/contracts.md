@@ -33,3 +33,26 @@ Note model limits are now concrete: 32 records, title 160 UTF-8 bytes, text 4096
 `firmware/companion_probe/embedded_http.hpp` uses ESP-IDF HTTP parsing (2048-byte headers, 256-byte URI), 128-bit RNG session/CSRF capabilities, and a private-by-default boundary. `begin()` requires a ready network and a pinned trusted origin such as the current device IP; do not derive it from an incoming Host. Start Wi-Fi before token generation so the hardware entropy source is active. HTTP limits local transport privacy; it is not TLS. No CORS. Authorized data/settings/audio routes currently return 501 until real providers are integrated.
 
 Never expose approval/revocation through an unauthenticated network route. Physical callbacks are serialized by a short-held mutex, outside all network I/O. The probe does not initialize GPIO or claim a hardware approval test. Session responses contain no notes or secrets; only an approved session receives its CSRF capability. Unknown static/file paths require approval and are not mapped to the SD.
+
+
+## Notes HTTP raccordées — 4 novembre 2026
+
+`NoteService` et `NoteHttp` fournissent les routes de notes avec un NoteStore
+récupéré par son propriétaire. GET /api/notes retourne {notes:[...]}, GET
+/api/notes/:id retourne une note. POST accepte exactement title/text ; PATCH
+exige title/text/pinned/version. Aucun champ inconnu, doublon, audio_id, NUL,
+Unicode invalide, nombre fractionnaire ou version hors plage. DELETE exige
+exactement version=<entier positif sans zéro initial>, sans corps.
+
+`EmbeddedHttp(origin, &notes)` emprunte le backend : sa durée de vie dépasse
+celle du serveur et son store ne doit avoir aucun autre utilisateur concurrent.
+Le mutex stockage couvre toute l'opération ; l'autorisation finale après attente
+est le point d'acceptation. Révocation ultérieure : pas de nouvelle opération,
+une écriture déjà acceptée peut terminer. Les réponses sont envoyées après
+libération des mutex. Seule une mutation réussie renouvelle la session, jamais
+les lectures/échecs. Le propriétaire monte FAT, précrée son répertoire privé et
+appelle recover avant le démarrage ; aucun formatage/recover automatique.
+
+Sans backend : 501. Store indisponible : 503. Conflit : 409, capacité : 507.
+Le web utilise les notes seules si /api/state vaut 501 ; aucun faux état appareil.
+Le tableau de bord complet et les autres services restent non raccordés.

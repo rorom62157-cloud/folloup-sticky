@@ -156,7 +156,13 @@
     clearTimeout(dataTimer); dataTimer = null;
     const ownGeneration = generation, ownRefreshId = ++refreshId;
     try {
-      const next = await api('/api/state');
+      let next;
+      try { next = await api('/api/state'); }
+      catch (error) {
+        if (error.status !== 501) throw error;
+        const available = await api('/api/notes');
+        next = { notes: available.notes, notes_only: true };
+      }
       if (generation !== ownGeneration || ownRefreshId !== refreshId) return;
       const firstLoad = state === null;
       state = next;
@@ -179,6 +185,11 @@
     if (view === 'help') { help(content); return; }
     if (!state) { empty(content, 'Chargement des données autorisées…'); return; }
     if (view === 'notes') { notes(content); return; }
+    if (state.notes_only) {
+      if (view === 'audio') { empty(content, 'Les enregistrements ne sont pas encore disponibles dans ce firmware.'); return; }
+      content.append(node('p', 'Vos notes sont disponibles. Les informations appareil, l’agenda et les autres services ne sont pas encore raccordés.', { class: 'notice' }));
+      notes(content); return;
+    }
     if (view === 'audio') { recordings(content); return; }
     const stats = node('div', null, { class: 'stats' });
     for (const [title, value] of [['Batterie', state.battery_percent === null ? 'Non mesurée' : `${state.battery_percent} %`], ['Internet', state.network.internet ? 'Disponible' : 'Hors ligne'], ['Compagnon', state.sleep === 'light' ? 'Veille légère' : 'Éveillé']]) put(stats, put(node('div', null, { class: 'stat' }), node('small', title), node('strong', value)));
@@ -305,7 +316,7 @@
     secretForm(gf, '/api/settings/gemini', () => ({ api_key: key.value }), [key], 'Clé Gemini enregistrée. Sa validité et son quota ne sont pas encore vérifiés.', 'Enregistrer la clé');
     put(gemini, gf, node('p', 'Une clé enregistrée ne prouve pas l’accès au service. Aucun appel IA de test n’est envoyé par cette page.', { class: 'small muted' }));
     const google = card('Google, séparément'); google.classList.add('wide');
-    put(google, node('p', `État communiqué : ${state ? googleStatus(state.google.state) : 'non disponible'}.`), node('p', 'Une autorisation manuelle via OAuth Playground avec vos propres identifiants est possible. L’adaptateur Google et la saisie sécurisée de cette autorisation ne sont pas encore implémentés ; la connexion et la synchronisation restent indisponibles ici.', { class: 'muted' }));
+    put(google, node('p', `État communiqué : ${state?.google ? googleStatus(state.google.state) : 'non disponible'}.`), node('p', 'Une autorisation manuelle via OAuth Playground avec vos propres identifiants est possible. L’adaptateur Google et la saisie sécurisée de cette autorisation ne sont pas encore implémentés ; la connexion et la synchronisation restent indisponibles ici.', { class: 'muted' }));
     put(grid, wifi, gemini, google); content.append(grid);
   }
   function secretForm(form, path, body, secrets, message, label) {

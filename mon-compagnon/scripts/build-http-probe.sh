@@ -5,6 +5,7 @@ cli=${ARDUINO_CLI:-/Applications/Arduino IDE.app/Contents/Resources/app/lib/back
 stage="$root/build/companion_probe"
 mkdir -p "$stage"
 cp "$root/firmware/companion_probe/"* "$stage/"
-cp "$root/core/compagnon.hpp" "$root/core/compagnon.cpp" "$root/core/http_access.hpp" "$root/core/http_access.cpp" "$stage/"
+cp "$root"/core/*.hpp "$root"/core/*.cpp "$stage/"
+cp "$root"/firmware/storage/posix_note_files.* "$stage/"
 python3 "$root/scripts/embed-web.py" "$root/web" "$stage/web_assets.hpp"
 "$cli" compile --fqbn 'esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi' --build-path "$root/build/http-probe-objects" "$stage"
