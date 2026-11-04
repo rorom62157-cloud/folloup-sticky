@@ -16,6 +16,10 @@ namespace compagnon::device {
 // No paging/truncation: the caller chooses which returned lines to display.
 std::vector<std::string> wrapText(const std::string& text, std::size_t columns);
 
+// Rotation maps logical coordinates into the unchanged 800x480 wire frame.
+// Portrait: (x,y) -> (799-y,x); PortraitInverted: (x,y) -> (y,479-x).
+enum class Orientation { Landscape, Portrait, PortraitInverted };
+
 class Raster {
 public:
     static constexpr int width = 800;
@@ -23,7 +27,9 @@ public:
     static constexpr std::size_t bytes = 48000;
     // Buffer is borrowed, must have bytes capacity, and outlive this object.
     // A null buffer is permitted and makes drawing a no-op.
-    explicit Raster(std::uint8_t* buffer);
+    explicit Raster(std::uint8_t* buffer, Orientation orientation = Orientation::Landscape);
+    int logicalWidth() const;
+    int logicalHeight() const;
     void clear();
     // 5x7 authored bitmap glyphs in 6x8 cells; inverse fills the cell black.
     // Coordinates clip to the canvas. Nonpositive scale draws nothing.
@@ -34,6 +40,7 @@ public:
 private:
     void pixel(std::int64_t x, std::int64_t y, bool black);
     std::uint8_t* buffer_;
+    Orientation orientation_;
 };
 
 } // namespace compagnon::device

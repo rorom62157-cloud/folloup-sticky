@@ -19,6 +19,8 @@ bool beginBoard(std::string& error);
 // Mount existing FAT without formatting; create only kNotesDirectory.
 bool mountNotes(std::string& error);
 // Exactly 48000 readable bytes, row-major 100 bytes/row, MSB left, 1=white.
-// Synchronous normal full waveform; frame must remain stable until return.
-bool display(const uint8_t* mono48000, std::string& error);
+// Synchronous full waveform; frame must remain stable until return.
+// fast selects the pinned reference forced-temperature OTP waveform. Use normal
+// for initial/periodic clearing; fast may leave lower contrast and ghosting.
+bool display(const uint8_t* mono48000, std::string& error, bool fast = false);
 }  // namespace compagnon::device

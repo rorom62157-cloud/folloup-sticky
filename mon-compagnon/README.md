@@ -2,7 +2,7 @@
 
 Assistant personnel sur Waveshare ESP32-S3-ePaper-3.97, écran non tactile 800 × 480. Projet indépendant développé à partir des besoins de Romain ; FolloUp Waveshare sert de référence matérielle et ergonomique.
 
-**État : premier lot en développement, pas encore un firmware utilisateur complet.** Ne pas flasher un diagnostic en pensant installer l'application. Les pilotes, l'affichage et les connecteurs ne sont pas validés sur l'appareil.
+**État : version0.2 installable sur appareil, orientée usages locaux en portrait.** Accueil et applications Notes/Post-it/Tâches/Fichiers texte, réglages et accès web. Voir [le guide0.2](docs/device-0.2.md) et les observations réelles dans docs/status.md. Audio, services externes et veilles restent à intégrer.
 
 ## Contenu
 

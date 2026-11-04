@@ -152,11 +152,23 @@ std::vector<std::string> wrapText(const std::string& value, std::size_t columns)
     return lines;
 }
 
-Raster::Raster(std::uint8_t* buffer) : buffer_(buffer) {}
+Raster::Raster(std::uint8_t* buffer, Orientation orientation)
+    : buffer_(buffer), orientation_(orientation) {}
+int Raster::logicalWidth() const { return orientation_ == Orientation::Landscape ? width : height; }
+int Raster::logicalHeight() const { return orientation_ == Orientation::Landscape ? height : width; }
 void Raster::clear() { if (buffer_) std::memset(buffer_, 0xFF, bytes); }
 const std::uint8_t* Raster::data() const { return buffer_; }
 void Raster::pixel(std::int64_t x, std::int64_t y, bool black) {
-    if (!buffer_ || x < 0 || y < 0 || x >= width || y >= height) return;
+    if (!buffer_ || x < 0 || y < 0 || x >= logicalWidth() || y >= logicalHeight()) return;
+    if (orientation_ == Orientation::Portrait) {
+        const auto originalX = x;
+        x = width - 1 - y;
+        y = originalX;
+    } else if (orientation_ == Orientation::PortraitInverted) {
+        const auto originalX = x;
+        x = y;
+        y = height - 1 - originalX;
+    }
     const auto offset = static_cast<std::size_t>(y * (width / 8) + x / 8);
     const auto bit = static_cast<std::uint8_t>(0x80 >> (x % 8));
     if (black) buffer_[offset] &= static_cast<std::uint8_t>(~bit);
@@ -164,8 +176,8 @@ void Raster::pixel(std::int64_t x, std::int64_t y, bool black) {
 }
 void Raster::bar(int x, int y, int w, int h, bool black) {
     if (!buffer_ || w <= 0 || h <= 0) return;
-    const auto right = std::min<std::int64_t>(width, static_cast<std::int64_t>(x) + w);
-    const auto bottom = std::min<std::int64_t>(height, static_cast<std::int64_t>(y) + h);
+    const auto right = std::min<std::int64_t>(logicalWidth(), static_cast<std::int64_t>(x) + w);
+    const auto bottom = std::min<std::int64_t>(logicalHeight(), static_cast<std::int64_t>(y) + h);
     for (auto yy = std::max<std::int64_t>(0, y); yy < bottom; ++yy)
         for (auto xx = std::max<std::int64_t>(0, x); xx < right; ++xx) pixel(xx, yy, black);
 }
@@ -175,11 +187,11 @@ void Raster::text(int x, int y, const std::string& value, int scale, bool invers
     const std::int64_t cellW = 6LL * scale, cellH = 8LL * scale;
     for (char c : displayText(value)) {
         if (c == '\n') { cursor = x; top += cellH; continue; }
-        if (cursor < width && cursor + cellW > 0 && top < height && top + cellH > 0) {
+        if (cursor < logicalWidth() && cursor + cellW > 0 && top < logicalHeight() && top + cellH > 0) {
             const auto rows = glyph(c);
             // Iterate clipped screen pixels, so even INT_MAX scale is bounded.
-            for (auto yy = std::max<std::int64_t>(0, top); yy < std::min<std::int64_t>(height, top + cellH); ++yy)
-                for (auto xx = std::max<std::int64_t>(0, cursor); xx < std::min<std::int64_t>(width, cursor + cellW); ++xx) {
+            for (auto yy = std::max<std::int64_t>(0, top); yy < std::min<std::int64_t>(logicalHeight(), top + cellH); ++yy)
+                for (auto xx = std::max<std::int64_t>(0, cursor); xx < std::min<std::int64_t>(logicalWidth(), cursor + cellW); ++xx) {
                     const auto row = (yy - top) / scale, col = (xx - cursor) / scale;
                     const bool ink = row < 7 && col < 5 && (rows[static_cast<std::size_t>(row)] & (16 >> col));
                     pixel(xx, yy, inverse ? !ink : ink);

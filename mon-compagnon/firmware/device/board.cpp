@@ -75,7 +75,7 @@ esp_err_t cursor() {
     esp_err_t result = command(0x4E, x, sizeof(x));
     return result == ESP_OK ? command(0x4F, y, sizeof(y)) : result;
 }
-esp_err_t initializePanel() {
+esp_err_t initializePanel(bool fast) {
     pauseMs(10);
     gpio_set_level(kReset, 0);
     pauseMs(2);
@@ -100,6 +100,13 @@ esp_err_t initializePanel() {
         {0x3C, border, sizeof(border)}, {0x18, temperature, sizeof(temperature)}};
     for (const auto& step : steps) {
         result = command(step.cmd, step.data, step.size);
+        if (result != ESP_OK) return result;
+    }
+    if (fast) {
+        // Pinned FolloUp InitFull(true): forced temperature selects fast OTP.
+        // Paired with 0xD7 below, which does not reload the sensor temperature.
+        const uint8_t fastTemperature[] = {0x6A};
+        result = command(0x1A, fastTemperature, sizeof(fastTemperature));
         if (result != ESP_OK) return result;
     }
     return cursor();
@@ -186,15 +193,16 @@ bool mountNotes(std::string& error) {
     return true;
 }
 
-bool display(const uint8_t* frame, std::string& error) {
+bool display(const uint8_t* frame, std::string& error, bool fast) {
     error.clear();
     if (!ready || !frame) { error = "Ecran non initialise ou image absente"; return false; }
-    if (!check(initializePanel(), "Initialisation SSD1677", error)) return false;
+    if (!check(initializePanel(fast), "Initialisation SSD1677", error)) return false;
     // Reset the cursor explicitly for each plane rather than relying on wraparound.
     if (!check(command(0x24, frame, kFrameBytes), "Image ecran", error)) return false;
     if (!check(cursor(), "Curseur ecran", error)) return false;
     if (!check(command(0x26, frame, kFrameBytes), "Base ecran", error)) return false;
-    const uint8_t full[] = {0xF7};
+    // Pinned FolloUp TurnOnDisplayFast/TurnOnDisplay; no custom LUT.
+    const uint8_t full[] = {static_cast<uint8_t>(fast ? 0xD7 : 0xF7)};
     if (!check(command(0x22, full, sizeof(full)), "Commande rafraichissement", error)) return false;
     if (!check(command(0x20), "Activation ecran", error)) return false;
     return check(busy(), "Attente ecran (10 s maximum)", error);

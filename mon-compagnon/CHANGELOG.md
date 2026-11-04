@@ -46,3 +46,14 @@ avant affichage, demandes répétées et affichage trompeur de clé Wi-Fi corrig
 après revue. Compilation et tests hôte passants. Après reconnexion, sauvegarde vérifiée des
 secteurs remplacés, installation/vérification réussie, démarrage et test SD
 réel passants ; menu confirmé visible par Romain.
+
+
+## Version0.2 — portrait et applications locales
+
+Accueil et vrai menu Applications, notes avec titres et actions, post-it dédiés,
+tâches persistantes et cochables, lecteur TXT/MD en lecture seule, réglages
+mémorisés et aide. Rendu portrait dans les deux sens, écran dans une tâche à
+double buffer, confirmations après affichage effectif, rafraîchissement rapide
+sourcé et nettoyage périodique. Panne réseau sans blocage du local ; panne écran
+révoque l'accès web. Tests hôte et premier démarrage/stockage notes+tâches sur
+carte passants ; sens du portrait ajusté au retour visuel de Romain.

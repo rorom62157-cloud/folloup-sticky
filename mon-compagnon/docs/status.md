@@ -1,5 +1,65 @@
 # Status — 2026-11-04 — first foundation milestone
 
+## Version0.2 — portrait, menus et usages locaux
+
+Cette section est l'état courant ; les lots alpha ci-dessous restent historiques.
+L'application ouvre un véritable Accueil et un menu Applications : Notes,
+Post-it, Tâches, Fichiers texte, Compagnon web, Réglages et Aide. Création avec
+un titre et un texte, renommage, édition, épinglage et suppression confirmée
+sont raccordés. Les tâches locales ont leur propre stockage versionné et un
+état terminé persistant. Le lecteur TXT/MD parcourt la SD en lecture seule avec
+pagination et limites explicites ; les répertoires privés sont exclus.
+
+Portrait480×800 par défaut, avec les deux sens et le paysage dans Réglages ;
+choix mémorisé. Romain a signalé le premier sens retourné, le défaut est donc
+corrigé vers Orientation::PortraitInverted pour le sens physique de sa carte.
+Le rendu a été vérifié sur hôte à partir des fonctions réelles d'affichage
+(accueil/applications/clavier/réseau/post-it). Buffers doubles PSRAM et tâche
+écran : navigation réactive pendant les rafraîchissements, confirmations
+reportées jusqu'au choix effectivement affiché. Une autre navigation annule
+la confirmation en attente. Rafraîchissement rapide complet sourcé D7, normal
+périodique F7 ; aucune vague partielle inventée.
+
+Missions gpt-6.1-sol/medium : rotation/rendu/pilote, TaskStore et LocalFiles.
+Revue indépendante gpt-6.1-sol/high, corrections puis relecture : pas de nouveau
+P1/P2 trouvé. Défauts corrigés : confirmation sur choix non encore affiché,
+blocage du local sur panne Wi-Fi, session web maintenue sur erreur écran, zones
+chevauchantes en paysage. L'échec réseau conserve l'usage local ; une panne
+terminale d'écran révoque la session et coupe l'AP.
+
+Tests réellement passants : tâches (dont coupures injectées et redémarrage),
+fichiers réels en lecture seule, rendu/canaris/trois orientations, parcours UI
+exécutant les fonctions réelles du firmware avec fixtures hôte, notes HTTP et
+courses web. Tâches/fichiers/rendu également ASan/UBSan par leurs auteurs.
+La simulation UI couvre création de note/tâche, épinglage, renommage, annulation
+non destructive, brouillon préservé et validation différée, état terminé
+persistant, orientation et pagination d'aide. Ce n'est pas un test physique.
+
+Installation0.2 initiale réellement effectuée : identité/sécurité recontrôlées,
+firmware alpha courant comparé aux quatre images de récupération conservées,
+puis remplacement et verify-flash de l'application seulement à0x10000. Table,
+bootloader et OTA non réécrits. Journal réel : READY0.2 portrait+menus+notes+
+tasks+textfiles, puis NOTES_TEST PASS et TASKS_TEST PASS. Les essais créent,
+récupèrent et relisent des éléments temporaires, puis suppriment seulement ces
+éléments ; la tâche est également cochée avant récupération. Aucune sauvegarde
+ou suppression de fichiers personnels dans le lecteur.
+
+Romain a signalé le premier portrait retourné. La correction du défaut vers
+Orientation::PortraitInverted est installée et verify-flash est passé après
+nouvelle réidentification et vérification du firmware0.2 conservé. Il confirme
+ensuite : « Oui, à l'endroit et Applications s'ouvre ». Sens et ouverture du
+menu Applications sont donc observés physiquement. Les autres gestes et le
+lecteur texte sur un fichier réel restent à parcourir avec lui. Les notes et tâches sont réellement testées
+sur la SD, sans formatage. Consommation, batterie, PMIC, retraits/coupures SD
+et pression mémoire maximale restent non validés. Audio, Google/Gemini, agenda,
+rappels datés, PDF/EPUB et veilles restent à intégrer ; aucune fausse fonction
+ou synchronisation n'est présentée comme opérationnelle.
+Compilation finale (sens corrigé) : 1113187 octets programme,44880 statiques,
+image1113328 octets sous app0. Installations0.2 par application seule à0x10000 ;
+les journaux/empreintes et les images de retour sont horsGit sous artifacts.
+Guide d'usage : docs/device-0.2.md.
+
+
 ## Alpha notes sur appareil — 4 novembre 2026 — installée et premier essai réussi
 
 Nouvelle vraie cible : firmware/device/device.ino ; distincte du diagnostic et

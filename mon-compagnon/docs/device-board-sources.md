@@ -37,3 +37,19 @@ No PMIC register is read or written, and no charger profile is assumed. The refe
 The SSD1677 sequence and transfer design are adaptations of the pinned FolloUp reference, whose root [LICENSE](https://github.com/rorom62157-cloud/folloup-sticky/blob/1682b7e7d7ff9c6b23ab7e903c44b241f095b402/LICENSE) is GNU GPL version3. The complete unchanged license is retained in `firmware/device/vendor/FolloUp-LICENSE.txt`; the adapted files declare `GPL-3.0-only`. No upstream copyright notice was present in the inspected source files; the project and exact paths remain attributed above. Distribution of the linked firmware must satisfy GPLv3, including corresponding source and compatible licensing of the complete combined work.
 
 Validation on 2026-11-04: `board.cpp` cross-compiled successfully as a translation unit using the installed Arduino-ESP32 **3.3.6** ESP32-S3 toolchain and its actual SDK flags from `build/http-probe-objects/compile_commands.json`, additionally enabling `-Wall -Wextra -Werror -std=gnu++17`. No warnings. Older project statements about installed3.3.8 are stale. Full application linkage is tracked by the integrating task. There was no upstream build and no flash. Hardware verification remains required for orientation/polarity, refresh completion, key levels, SD access and cold boot power.
+
+
+## Portrait et rafraîchissement rapide — version0.2
+
+Le framebuffer envoyé reste800×480/MSB/1=blanc. Le rendu logique480×800 est
+transformé par Raster : Portrait(x,y)→(799-y,x), inverse→(y,479-x).
+La fonction display(frame,error,fast=false) conserve le rafraîchissement normal
+F7 par défaut. La voie rapide vérifiée ajoute1A=6A à l'initialisation et utilise
+22=D7 puis20, toujours avec les deux plans complets. Aucun LUT ou mode partiel
+inventé. Source épinglée : ssd1677_driver.cpp au commit de référence existant,
+blobcd7018d06e97ccaa596bd8eab621dfcd3c9b9dcb, fonctions InitFull,
+TurnOnDisplayFast et RefreshFastBase. La référence avertit du contraste et du
+nettoyage moins complets : une image normale est envoyée périodiquement.
+Une seule tâche possède le pilote ; deux buffers rendent la navigation
+indépendante de la durée du rafraîchissement. Le sens physique exact du portrait
+et le contraste restent à observer sur l'appareil.
