@@ -1,0 +1,11 @@
+build/
+/.cache/
+/artifacts/
+*.bin
+*.elf
+*.map
+*.wav
+.env
+*.secret
+__pycache__/
+.DS_Store
