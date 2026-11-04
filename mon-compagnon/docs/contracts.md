@@ -25,3 +25,11 @@ Errors {error:"code",message:"French explanation"}; 401 expired/not approved ret
 
 ## Prototype boundaries
 Web owns web/ only; vanilla HTML/CSS/JS no build dependencies. Core owns core/ and tests/ only. Root owns scripts/, docs/, firmware integration. UI must not fake success for unimplemented operations. Host test runner will compile with clang++ -std=c++17 -Wall -Wextra -Werror -pedantic; source/test locations reported by agent.
+
+## Implemented notes storage and transport boundary
+
+Note model limits are now concrete: 32 records, title 160 UTF-8 bytes, text 4096 UTF-8 bytes; see `note-storage.md`. HTTP body cap is 24576 encoded JSON bytes including escaping. Note IDs are references rather than paths. The query component (e.g. delete `version`) is separate from the normalized pathname checked by the boundary; future note handlers must parse a positive exact integer revision before mutation.
+
+`firmware/companion_probe/embedded_http.hpp` uses ESP-IDF HTTP parsing (2048-byte headers, 256-byte URI), 128-bit RNG session/CSRF capabilities, and a private-by-default boundary. `begin()` requires a ready network and a pinned trusted origin such as the current device IP; do not derive it from an incoming Host. Start Wi-Fi before token generation so the hardware entropy source is active. HTTP limits local transport privacy; it is not TLS. No CORS. Authorized data/settings/audio routes currently return 501 until real providers are integrated.
+
+Never expose approval/revocation through an unauthenticated network route. Physical callbacks are serialized by a short-held mutex, outside all network I/O. The probe does not initialize GPIO or claim a hardware approval test. Session responses contain no notes or secrets; only an approved session receives its CSRF capability. Unknown static/file paths require approval and are not mapped to the SD.

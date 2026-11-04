@@ -6,9 +6,11 @@ Assistant personnel sur Waveshare ESP32-S3-ePaper-3.97, écran non tactile 800 �
 
 ## Contenu
 
-- `core/` : logique C++17 testable de veille, capture/classification et autorisation physique du compagnon, et écriture WAV par blocs avec conservation des fichiers partiels.
+- `core/` : logique C++17 testable de veille, capture/classification et autorisation physique du compagnon, écriture WAV par blocs, stockage versionné des notes/post-it et contrôle des requêtes HTTP.
 - `web/` : compagnon web français, sans dépendance distante, branché sur un contrat API explicite. Un backend approuvé est nécessaire ; pas de faux succès lorsque absent.
+- `firmware/companion_probe/` : transport HTTP ESP-IDF, sessions et ressources web ; harness de compilation uniquement, sans connexion Wi-Fi ni pilotes applicatifs.
 - `firmware/diagnostic/` : identification matérielle et entrées, isolée du firmware utilisateur.
+- `firmware/storage/` : adaptateur de notes pour un répertoire privé FAT déjà monté, avec tests sur fichiers réels ; probe de compilation séparé.
 - `docs/specification.md` : cahier des charges approuvé.
 - `docs/contracts.md` : interfaces de ce lot.
 - `docs/hardware.md` : mapping sourcé et contraintes BOOT/PWR.
@@ -20,16 +22,22 @@ Assistant personnel sur Waveshare ESP32-S3-ePaper-3.97, écran non tactile 800 �
 ```sh
 ./scripts/test-core.sh
 ./scripts/test-storage.sh
+sh scripts/test-notes.sh
+sh scripts/test-http.sh
+sh scripts/test-note-files.sh
+python3 tests/diagnostic_preflight_tests.py
+sh scripts/build-http-probe.sh
 ./scripts/build-core-smoke.sh
 ./scripts/build-diagnostic.sh
+sh scripts/build-storage-probe.sh
 node tests/web_races.mjs
 ```
 
-Les deux suites de tests utilisent clang++/C++17. Le smoke test compile et lie le noyau et le stockage avec la cible ESP32-S3 ; son image ne doit pas être flashée. Le diagnostic utilise Arduino CLI et le core Espressif installé, cible ESP32-S3 16MB/PSRAM octale/USB CDC. Ce diagnostic ne remplace pas une compilation du firmware final ESP-IDF. Aucun script ne flashe automatiquement.
+Les suites C++ utilisent clang++/C++17. Les probes compilent et lient les modules avec la cible ESP32-S3 ; leurs images ne doivent pas être flashées. Le diagnostic utilise Arduino CLI et le core Espressif installé, cible ESP32-S3 16MB/PSRAM octale/USB CDC. Ce diagnostic ne remplace pas une compilation du firmware final ESP-IDF. Les commandes de vérification ci-dessus ne téléversent rien ; seul le lanceur de préparation explicitement exécuté écrit sur la carte.
 
 ## Reprendre le travail
 
-Lire `AGENTS.md`, `docs/status.md`, puis le contrat du module concerné. Les missions doivent avoir un input, un output et une fin. Une revue indépendante vérifie les défauts concrets avant intégration. Les choix non résolus, notamment OAuth Google sans serveur personnel, ne doivent jamais être remplacés par des simulacres.
+Pour un autre ordinateur, commencer par [docs/handover.md](docs/handover.md), puis lire `AGENTS.md`, `docs/status.md` et le contrat du module concerné. Les missions doivent avoir un input, un output et une fin. Une revue indépendante vérifie les défauts concrets avant intégration. Les intégrations non validées, notamment OAuth Google sans serveur personnel, ne doivent jamais être remplacées par des simulacres.
 
 ## Historique et branche
 

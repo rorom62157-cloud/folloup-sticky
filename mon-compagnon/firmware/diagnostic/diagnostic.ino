@@ -124,19 +124,21 @@ void setup() {
   printIdentity();
   initializeInputs();
   probeI2c();
-  Serial.println("Ready: press/release rocker and BOOT. Send i to repeat identification.");
+  Serial.println("Ready: press/release rocker and BOOT. i = identity; p = I2C probes.");
 }
 
 void loop() {
   const uint32_t now = millis();
   pollInputs(now);
-  if (Serial.available() > 0 && Serial.read() == 'i') {
-    printIdentity();
+  if (Serial.available() > 0) {
+    const int command = Serial.read();
+    if (command == 'i') printIdentity();
+    else if (command == 'p') probeI2c();
   }
   static uint32_t lastHeartbeat = 0;
   if (static_cast<uint32_t>(now - lastHeartbeat) >= kHeartbeatMs) {
     lastHeartbeat = now;
-    Serial.printf("DIAGNOSTIC PAS APPLICATION — alive, uptime %lu ms; i = identity\n",
+    Serial.printf("DIAGNOSTIC PAS APPLICATION — alive, uptime %lu ms; i = identity; p = I2C\n",
                   static_cast<unsigned long>(now));
   }
   delay(2);

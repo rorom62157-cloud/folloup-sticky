@@ -5,8 +5,8 @@
 ## Comportement
 
 - Affiche modèle/révision CPU, flash détectée, PSRAM disponible et mémoire libre ; attend au plus 3 secondes la connexion série.
-- Signale les appuis et relâchements BOOT0, rocker haut4, clic5 et bas6, avec anti-rebond de 30 ms. Une commande série `i` répète l’identification ; un message de vie rappelle le mode diagnostic toutes les 15 secondes.
-- Sonde une seule fois les adresses I2C 0x34, 0x18, 0x51, 0x6A, 0x6B et 0x70 sur SDA41/SCL42 à 100 kHz. Chaque sonde transmet uniquement START/adresse/STOP, sans registre, commande ou donnée. Un ACK prouve seulement une présence ; un NACK ne prouve pas l’absence du composant, notamment s’il dort ou n’est pas alimenté.
+- Signale les appuis et relâchements BOOT0, rocker haut4, clic5 et bas6, avec anti-rebond de 30 ms. La commande série `i` répète l’identification ; `p` relance les sondes I²C ; un message de vie rappelle le mode diagnostic toutes les 15 secondes.
+- Sonde au démarrage, puis sur commande `p`, les adresses I2C 0x34, 0x18, 0x51, 0x6A, 0x6B et 0x70 sur SDA41/SCL42 à 100 kHz. Chaque sonde transmet uniquement START/adresse/STOP, sans registre, commande ou donnée. Un ACK prouve seulement une présence ; un NACK ne prouve pas l’absence du composant, notamment s’il dort ou n’est pas alimenté.
 - Ne configure ni PMIC, rails, charge batterie, RTC ou capteurs. N’initialise ni écran ni audio et n’active aucun réseau. La microSD reste démontée : aucun formatage, écriture, parcours ou montage FAT n’est tenté, faute de garantie de montage strictement en lecture seule dans cette voie Arduino. Les fichiers existants restent hors du périmètre du test.
 
 Le programme ne change pas les réglages du PMIC. Ses comportements matériels existants restent donc actifs : PWR peut encore couper l’alimentation lors d’un maintien. PWR n’est pas un bouton GPIO direct ; ses événements exigent un pilote PMIC et ne sont pas diagnostiqués ici. Relâcher BOOT lors d’un reset/démarrage pour éviter le mode téléchargement ROM. La position physique des boutons est à vérifier avec leur sérigraphie et les événements série.
@@ -34,3 +34,9 @@ Après un éventuel flash autorisé séparément, ouvrir le moniteur série à 1
 - [Configuration de référence utilisateur, commit 1682b7e7d7ff9c6b23ab7e903c44b241f095b402](https://github.com/rorom62157-cloud/folloup-sticky/blob/1682b7e7d7ff9c6b23ab7e903c44b241f095b402/components/board/include/waveshare_board_config.h) : adresse QMI8658 0x6B ; l’exemple constructeur mentionne aussi 0x6A, d’où les deux sondes. Le diagnostic est écrit indépendamment et ne copie pas les pilotes de référence.
 
 Vérifications de ce livrable : inspection statique des appels ; compilation et essai matériel laissés à l’intégration. Aucun flash, reset, effacement, accès série ou commit n’est exécuté par l’auteur de ce diagnostic.
+
+## Mise à jour du diagnostic
+
+Le lanceur `scripts/Preparer_module.command --update-only` recompile, inspecte et installe le diagnostic sans effacement complet préalable (seuls les secteurs des images écrites sont remplacés). Fermer le moniteur série pendant le téléversement. L’exécution doit se faire depuis un Terminal autorisé à ouvrir le port ; l’agent ne contourne pas le refus d’accès de sa session. Revenir au moniteur à 115200 puis envoyer `p` pour obtenir les sondes sans retrouver le début du journal. Aucun accès SD ni activation de rails PMIC.
+
+La mise à jour est aussi le comportement par défaut sans argument. L'effacement intégral nécessite `--erase-and-install` explicite. Le lanceur contrôle port/MAC, états de sécurité désactivés et table de partitions attendue avant toute écriture. Une MAC différente de celle consignée impose une réidentification. Le schéma de diagnostic reste distinct du futur partitionnement applicatif.

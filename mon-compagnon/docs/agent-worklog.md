@@ -22,3 +22,28 @@ Root orchestration: source retrieval, contracts, isolated branch, environment in
 | web_companion correction | gpt-6.1-sol / medium | Independent frontend review findings | Latest-refresh and session-generation guards implemented; root transport regression tests pass |
 
 Root reconciliation: strict host tests pass after corrections; WAV/whole core compile-link with installed ESP32-S3 SDK passes; Node syntax and three async regression scenarios pass. No on-device functional validation. Root bounded the web review after static findings rather than allow an unproductive VM reproduction to run indefinitely.
+
+## Resumed preparation and development slice
+
+| Mission | Model / thinking | Input | Output / state |
+|---|---|---|---|
+| hardware | gpt-6.1-sol / medium | Prepare MCU for tests, preserve SD; verified image/recovery first | USB denied; diagnostic rebuilt/inspected; backup and recovery procedure; complete |
+| notes | gpt-6.1-sol / medium | Exclusive note store, injected filesystem, crash/FAT tests | Versioned store, tests and storage contract; complete |
+| review_access | gpt-6.1-sol / high | Independent HTTP/client then storage/transport review | Found session bootstrap race, byte mismatch, corruption ID reuse and socket I/O under physical mutex; complete |
+| notes correction | gpt-6.1-sol / medium | Reproduced generation rollback/stale delete | Fail closed on corrupted committed snapshots, regression and sanitizers pass; complete |
+| web_corrections | gpt-6.1-sol / medium | Bootstrap race and limits aligned with new note store | Bootstrap invalidation and UTF-8/encoded-body validation; expanded actual-function regression suite passed; complete |
+| review_access recheck | gpt-6.1-sol / high | Current storage/transport fixes only | Both findings corrected; notes and HTTP host suites pass; complete |
+
+Root implemented HTTP policy, ESP-IDF transport, embedding/build pipeline and documentation. Network receive/send moved outside session mutex after review. No agents were asked to idle waiting for other missions. No Astra models. Hardware failure is an environment serial-access refusal, not a successful format/flash.
+
+## Reprise Work — adaptateur SD et lanceur
+
+| Mission | Model / thinking | Input / ownership | Output / checks / termination |
+|---|---|---|---|
+| sd_notes_adapter | gpt-6.1-sol / medium | NoteFiles contract; exclusive new storage adapter, real FS tests and compile-only probe/scripts; no existing files, mounts, hardware or Git | Adapter delivered, strict and ASan/UBSan tests pass, ESP crosscompile 325418/22628; terminated |
+| review_launcher | gpt-6.1-sol / high | Read-only preparation scripts and documented current scope | Four concrete findings: destructive default, identity binding, security gating, retained partition CSV; terminated |
+| review_launcher SD follow-up | gpt-6.1-sol / high | Read-only new adapter/contracts, author finished implementation | Real FS test passed; no confirmed defects, real FAT/media/heap remain unvalidated; terminated |
+| Root corrections/integration | current orchestrator | Exclusive existing launcher/build/docs and new Python preflight/tests | Default update, explicit erase flag, port/MAC gates, disabled-security requirement, fresh pinned build/table validation; four offline regressions and existing core/WAV/notes/HTTP pass |
+| review_launcher correction recheck | gpt-6.1-sol / high | Read-only final launcher/build/preflight | No remaining findings, shell syntax passes; real serial/flash not exercised; terminated |
+
+All missions bounded by explicit inputs, exclusive ownership, deliverable, checks and termination. No Astra, no idle loops, no remote publication. Root attempted normal serial open twice (second explicitly requested by Romain), both EPERM before communication; no alternate access route used. Device installation of `p` remains unconfirmed.

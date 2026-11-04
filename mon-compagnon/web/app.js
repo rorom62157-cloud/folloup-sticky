@@ -3,6 +3,10 @@
   const app = document.getElementById('app');
   let csrf = null, state = null, generation = 0, sessionTimer = null, dataTimer = null;
   let view = 'today', editing = null, busy = false, refreshId = 0;
+  let requestingAccess = false;
+  // Keep byte limits aligned with core/http_access.cpp and core/note_store.hpp.
+  const MAX_BODY_BYTES = 24576, MAX_TITLE_BYTES = 160, MAX_TEXT_BYTES = 4096;
+  const utf8Bytes = value => new TextEncoder().encode(value).byteLength;
   const requests = new Set(), mediaURLs = new Set();
   const node = (tag, text, attrs = {}) => {
     const el = document.createElement(tag);
@@ -22,6 +26,7 @@
   }
   function cleanup() {
     generation++; invalidateRefresh(); clearTimeout(sessionTimer);
+    requestingAccess = false;
     sessionTimer = dataTimer = null;
     for (const controller of requests) controller.abort();
     requests.clear(); clearMedia();
@@ -40,6 +45,10 @@
     constructor(message, status) { super(message); this.status = status; }
   }
   async function api(path, options = {}) {
+    const body = options.body === undefined ? undefined : JSON.stringify(options.body);
+    if (body !== undefined && utf8Bytes(body) > MAX_BODY_BYTES) {
+      throw new ApiError('Le contenu envoyé dépasse 24 576 octets après encodage. Réduisez le texte puis réessayez ; rien n’a été enregistré.', 413);
+    }
     const ownGeneration = generation;
     const controller = new AbortController(); requests.add(controller);
     const timeout = setTimeout(() => controller.abort(), 12000);
@@ -48,7 +57,7 @@
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
     if (method !== 'GET' && csrf) headers['X-CSRF-Token'] = csrf;
     try {
-      const res = await fetch(path, { method, headers, credentials: 'same-origin', mode: 'same-origin', cache: 'no-store', signal: controller.signal, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+      const res = await fetch(path, { method, headers, credentials: 'same-origin', mode: 'same-origin', cache: 'no-store', signal: controller.signal, body });
       if (ownGeneration !== generation) throw new DOMException('Session fermée', 'AbortError');
       if (res.status === 401) { locked('Votre session est fermée. Autorisez à nouveau l’accès sur l’appareil.'); throw new ApiError('Session fermée.', 401); }
       if (!res.ok) {
@@ -84,16 +93,22 @@
     if (pending) scheduleSession();
   }
   async function requestAccess(event) {
+    if (busy || requestingAccess) return;
+    // A bootstrap GET may still describe the session before this POST. Its
+    // response must never lock the UI and abort the new access request.
+    cleanup(); requestingAccess = true; busy = true;
     const ownGeneration = generation;
     const btn = event.currentTarget; btn.disabled = true;
     try { await api('/api/session/request', { method: 'POST', body: {} }); if (ownGeneration === generation) locked('', true); }
     catch (error) { if (ownGeneration === generation && error.status !== 401) { feedback(errorText(error), true); btn.disabled = false; } }
+    finally { if (ownGeneration === generation) { requestingAccess = false; busy = false; scheduleSession(); } }
   }
   function scheduleSession() {
     clearTimeout(sessionTimer);
     sessionTimer = setTimeout(checkSession, 3000);
   }
   async function checkSession() {
+    if (requestingAccess) return;
     let ownGeneration = generation;
     try {
       const session = await api('/api/session');
@@ -210,8 +225,9 @@
     const host = document.getElementById('editor'); host.replaceChildren();
     const box = card(note ? 'Modifier votre note' : 'Une nouvelle idée');
     const form = node('form');
-    const title = field(form, 'Titre', 'note-title', 'text', note?.title || '', 200);
-    const text = field(form, 'Texte', 'note-text', 'textarea', note?.text || '', 20000); text.required = true;
+    const title = field(form, 'Titre', 'note-title', 'text', note?.title || '', MAX_TITLE_BYTES);
+    const text = field(form, 'Texte', 'note-text', 'textarea', note?.text || '', MAX_TEXT_BYTES); text.required = true;
+    form.append(node('p', 'Limites : titre de 160 octets et texte de 4 096 octets en UTF-8. Les accents et emoji peuvent occuper plusieurs octets.', { class: 'small muted' }));
     const pin = node('input', null, { type: 'checkbox', id: 'note-pin' }); pin.checked = note?.pinned || false;
     if (note) put(form, put(node('label', null, { class: 'checkbox', for: 'note-pin' }), pin, node('span', 'Épingler comme post-it')));
     const save = node('button', 'Enregistrer', { type: 'submit', class: 'primary' });
@@ -219,6 +235,10 @@
     form.addEventListener('submit', async event => {
       event.preventDefault(); if (busy) return;
       const data = { title: title.value, text: text.value };
+      if (utf8Bytes(data.title) > MAX_TITLE_BYTES || utf8Bytes(data.text) > MAX_TEXT_BYTES) {
+        feedback('Note trop longue : le titre est limité à 160 octets et le texte à 4 096 octets en UTF-8. Réduisez le contenu ; votre texte reste dans l’éditeur et rien n’a été enregistré.', true);
+        return;
+      }
       if (note) { data.pinned = pin.checked; data.version = note.version; }
       const ownGeneration = beginMutation(); save.disabled = true;
       try {
