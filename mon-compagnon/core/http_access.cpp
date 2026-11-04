@@ -11,8 +11,8 @@ bool equalSecret(const std::string& a, const std::string& b) {
     return diff == 0;
 }
 }
-HttpAccess::HttpAccess(CompanionSession& session, std::string origin)
-    : session_(session), origin_(std::move(origin)) {
+HttpAccess::HttpAccess(CompanionSession& session, std::string origin, PairingMode mode, bool local_password_authenticated)
+    : session_(session), mode_(mode), local_password_authenticated_(local_password_authenticated), origin_(std::move(origin)) {
     const auto prefix = origin_.rfind("http://", 0) == 0 ? 7U :
                         origin_.rfind("https://", 0) == 0 ? 8U : 0U;
     if (prefix && origin_.find_first_of("/?#@\r\n", prefix) == std::string::npos)
@@ -43,12 +43,15 @@ std::string HttpAccess::tokenFromCookie(const std::string& cookie) {
     return found;
 }
 Result HttpAccess::requestSession(const std::string& token, const std::string& csrf, Millis now) {
+    if (!validPolicy()) return Result::Denied;
     if (!validCapability(token) || !validCapability(csrf) || token == csrf) return Result::InvalidArgument;
     const auto result = session_.request(token, now);
-    if (result == Result::Ok) csrf_ = csrf;
-    return result;
+    if (result != Result::Ok) return result;
+    csrf_ = csrf;
+    return mode_ == PairingMode::LocalPassword ? session_.physicalApprove(now) : Result::Ok;
 }
 HttpAccessDecision HttpAccess::check(const HttpAccessRequest& r, Millis now) {
+    if (!validPolicy()) return {403};
     if (host_.empty() || r.host != host_) return {403}; // DNS rebinding / foreign Host.
     if (r.path.empty() || r.path.size() > 256 || r.path[0] != '/' ||
         r.path.find_first_of("%\\?#\r\n") != std::string::npos ||

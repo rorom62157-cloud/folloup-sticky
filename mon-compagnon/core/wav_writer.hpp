@@ -1,4 +1,5 @@
-#pragma once
+#ifndef COMPAGNON_WAV_WRITER_HPP
+#define COMPAGNON_WAV_WRITER_HPP
 
 #include <cstddef>
 #include <cstdint>
@@ -65,3 +66,5 @@ private:
     int error_ = 0;
 };
 } // namespace compagnon
+
+#endif // COMPAGNON_WAV_WRITER_HPP

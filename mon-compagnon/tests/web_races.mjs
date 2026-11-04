@@ -32,6 +32,8 @@ function fixture() {
     querySelectorAll() { return []; }
     scrollIntoView() {}
     focus() {}
+    getBoundingClientRect() { return {left:0,top:0,width:400,height:200}; }
+    setPointerCapture() {}
   }
   const app = new Element('main');
   const find = predicate => {
@@ -173,5 +175,71 @@ const response = value => ({ok:true,status:200,json:async()=>value});
   await refresh;
   assert.equal(f.requests.length, 1, 'Only unimplemented state enables fallback');
   assert.equal(f.client.state(), null);
+}
+{
+  const f = fixture(); f.client.locked();
+  const check = f.client.checkSession();
+  f.requests[0].resolve(response({state:'denied', mode:'local-password'})); await check;
+  assert.ok(f.find(el => /validation physique est suspendue/.test(el.textContent || '')),
+    'Lock screen must name the actual local-password test mode');
+  const button = f.find(el => el.tag === 'button');
+  const access = f.client.requestAccess({currentTarget:button});
+  f.requests[1].resolve(response({state:'approved', mode:'local-password'}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.requests[2].path, '/api/session', 'Approved bootstrap fetches cookie-bound CSRF immediately');
+  f.requests[2].resolve(response({state:'approved', mode:'local-password', csrf:'local-csrf'}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.requests[3].path, '/api/state');
+  f.requests[3].resolve(response({})); await access;
+  assert.equal(f.find(el => el.attrs.id === 'lock-title'), undefined,
+    'Local-password approval does not leave an impossible physical waiting screen');
+  assert.ok(f.find(el => /validation physique suspendue/.test(el.textContent || '')));
+}
+{
+  const f = fixture(); f.client.editNote(null);
+  f.find(el => el.tag === 'button' && el.textContent === 'Post-it').handlers.click();
+  const canvas = f.find(el => el.attrs.id === 'postit-canvas');
+  canvas.handlers.pointerdown({pointerId:1,clientX:200,clientY:100,button:0,preventDefault(){}});
+  canvas.handlers.pointermove({pointerId:1,clientX:400,clientY:200,preventDefault(){}});
+  canvas.handlers.pointerup({pointerId:1});
+  f.find(el => el.attrs.id === 'note-text').value = 'Dessin à conserver';
+  const form = f.find(el => el.tag === 'form');
+  const save = form.handlers.submit({preventDefault(){}});
+  const created = {id:'created-once', title:'', text:'Dessin à conserver', pinned:false, version:1};
+  assert.equal(f.requests[0].path, '/api/notes');
+  f.requests[0].resolve(response(created));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.requests[1].path, '/api/postits/created-once');
+  assert.deepEqual(JSON.parse(f.requests[1].options.body).strokes, [[[512,512],[1023,1023]]]);
+  f.requests[1].resolve({ok:false,status:503,json:async()=>({message:'Carte occupée'})});
+  await new Promise(resolve => setImmediate(resolve));
+  f.requests[2].resolve(response({})); await save;
+  assert.ok(f.client.editing());
+  assert.match(f.find(el => el.attrs.id === 'feedback').textContent, /La note est enregistrée/);
+  const retry = form.handlers.submit({preventDefault(){}});
+  assert.equal(f.requests[3].path, '/api/notes/created-once', 'Partial save retries existing ID, never duplicate create');
+  assert.equal(f.requests[3].options.method, 'PATCH');
+  f.requests[3].resolve(response({...created, version:2}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(JSON.parse(f.requests[4].options.body).strokes, [[[512,512],[1023,1023]]], 'Drawing survives failed style persistence');
+  f.requests[4].resolve(response({version:1}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(JSON.parse(f.requests[5].options.body).pinned, true);
+  f.requests[5].resolve(response({...created,version:3,pinned:true}));
+  await new Promise(resolve => setImmediate(resolve));
+  f.requests[6].resolve(response({})); await retry;
+  assert.equal(f.requests.filter(r => r.path === '/api/notes' && r.options.method === 'POST').length, 1);
+  assert.equal(f.client.editing(), null);
+}
+{
+  const f = fixture(); f.client.editNote({id:'existing',title:'Titre',text:'Texte',version:1,pinned:true});
+  const save = f.find(el => el.attrs.type === 'submit');
+  assert.equal(save.disabled, true, 'Existing drawing must load before a write can replace it');
+  f.requests[0].resolve({ok:false,status:503,json:async()=>({message:'Carte indisponible'})});
+  await new Promise(resolve => setImmediate(resolve));
+  await f.find(el => el.tag === 'form').handlers.submit({preventDefault(){}});
+  assert.equal(f.requests.length, 1, 'Load failure cannot silently overwrite prior drawing');
+  assert.equal(save.disabled, true);
+  assert.match(f.find(el => el.attrs.id === 'feedback').textContent, /Dessin non chargé/);
 }
 console.log('web_races: all assertions passed (transport fixture, not browser validation)');

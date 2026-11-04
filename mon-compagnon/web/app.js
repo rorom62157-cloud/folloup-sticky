@@ -3,7 +3,7 @@
   const app = document.getElementById('app');
   let csrf = null, state = null, generation = 0, sessionTimer = null, dataTimer = null;
   let view = 'today', editing = null, busy = false, refreshId = 0;
-  let requestingAccess = false;
+  let requestingAccess = false, pairingMode = null;
   // Keep byte limits aligned with core/http_access.cpp and core/note_store.hpp.
   const MAX_BODY_BYTES = 24576, MAX_TITLE_BYTES = 160, MAX_TEXT_BYTES = 4096;
   const utf8Bytes = value => new TextEncoder().encode(value).byteLength;
@@ -59,7 +59,7 @@
     try {
       const res = await fetch(path, { method, headers, credentials: 'same-origin', mode: 'same-origin', cache: 'no-store', signal: controller.signal, body });
       if (ownGeneration !== generation) throw new DOMException('Session fermée', 'AbortError');
-      if (res.status === 401) { locked('Votre session est fermée. Autorisez à nouveau l’accès sur l’appareil.'); throw new ApiError('Session fermée.', 401); }
+      if (res.status === 401) { locked('Votre session est fermée. Demandez à nouveau l’accès.'); throw new ApiError('Session fermée.', 401); }
       if (!res.ok) {
         let message = `La demande a échoué (${res.status}).`;
         try { const detail = await res.json(); if (typeof detail.message === 'string') message = detail.message; } catch (_) { /* Non-JSON errors stay generic. */ }
@@ -83,7 +83,7 @@
     const box = node('section', null, { class: 'lock', 'aria-labelledby': 'lock-title' });
     const art = node('div', null, { class: 'lock-art', 'aria-hidden': 'true' });
     put(art, node('div', 'm.', { class: 'lock-screen' }));
-    put(box, art, node('span', 'Un accès, votre accord', { class: 'eyebrow' }), node('h1', pending ? 'Un clic sur votre compagnon.' : 'Votre espace, en confiance.', { id: 'lock-title' }), node('p', pending ? 'La demande est en attente. Sur l’appareil, utilisez le clic central pour accepter ou Retour pour refuser.' : 'Retrouvez vos notes et vos audios, rédigez un post-it et réglez votre compagnon. L’accès commence par votre accord physique.', { class: 'muted' }));
+    put(box, art, node('span', 'Mon compagnon', { class: 'eyebrow' }), node('h1', pending ? 'Un clic sur votre compagnon.' : 'Votre espace, en confiance.', { id: 'lock-title' }), node('p', pending ? 'La demande est en attente. Sur l’appareil, utilisez le clic central pour accepter ou Retour pour refuser.' : pairingMode === 'local-password' ? 'Accès local par le mot de passe du Wi-Fi du compagnon. La validation physique est suspendue pour cette version de test.' : pairingMode === 'physical' ? 'Retrouvez vos notes et vos post-it. L’accès commence par votre accord physique.' : 'Vérification du mode d’accès du compagnon…', { class: 'muted' }));
     const notice = node('p', message, { id: 'feedback', role: 'status', class: 'notice' });
     box.append(notice);
     const actions = node('div', null, { class: 'actions' });
@@ -99,7 +99,14 @@
     cleanup(); requestingAccess = true; busy = true;
     const ownGeneration = generation;
     const btn = event.currentTarget; btn.disabled = true;
-    try { await api('/api/session/request', { method: 'POST', body: {} }); if (ownGeneration === generation) locked('', true); }
+    try {
+      const result = await api('/api/session/request', { method: 'POST', body: {} });
+      if (ownGeneration === generation) {
+        pairingMode = result.mode === 'local-password' ? 'local-password' : 'physical';
+        locked('', result.state !== 'approved');
+        if (result.state === 'approved') await checkSession();
+      }
+    }
     catch (error) { if (ownGeneration === generation && error.status !== 401) { feedback(errorText(error), true); btn.disabled = false; } }
     finally { if (ownGeneration === generation) { requestingAccess = false; busy = false; scheduleSession(); } }
   }
@@ -113,13 +120,14 @@
     try {
       const session = await api('/api/session');
       if (generation !== ownGeneration) return;
+      pairingMode = session.mode === 'local-password' ? 'local-password' : 'physical';
       if (session.state === 'approved' && typeof session.csrf === 'string' && session.csrf) {
         if (!csrf) { cleanup(); ownGeneration = generation; csrf = session.csrf; buildPrivate(); await refresh(); }
         else csrf = session.csrf;
         if (ownGeneration === generation && csrf) scheduleSession();
       } else if (session.state === 'pending') {
         if (!document.querySelector('.lock')) locked('', true); else scheduleSession();
-      } else locked(session.state === 'denied' ? 'La demande a été refusée sur l’appareil.' : 'Aucune session active. Vous pouvez demander l’accès.');
+      } else locked(session.state === 'expired' ? 'La session a expiré. Vous pouvez demander l’accès.' : 'Aucune session active. Vous pouvez demander l’accès.');
     } catch (error) {
       if (generation !== ownGeneration || error.status === 401) return;
       // Fail closed on loss of the authorization check; do not leave cached private data visible.
@@ -131,6 +139,7 @@
     const heading = node('div', null, { class: 'heading' });
     put(heading, put(node('div'), node('span', 'Votre espace personnel', { class: 'eyebrow' }), node('h1', 'Bonjour, on fait le point ?')));
     put(heading, put(node('div', null, { class: 'toolbar' }), button('Actualiser', () => refresh(true)), button('Fermer la session', closeSession)));
+    app.append(node('p', pairingMode === 'local-password' ? 'Accès local par mot de passe Wi-Fi · validation physique suspendue pour les tests.' : 'Accès approuvé sur l’appareil.', { class: 'notice small' }));
     app.append(heading, node('p', '', { id: 'feedback', role: 'status', class: 'notice' }));
     const nav = node('nav', null, { class: 'tabs', 'aria-label': 'Rubriques' });
     for (const [id, title] of [['today', 'Aujourd’hui'], ['notes', 'Notes & post-it'], ['audio', 'Enregistrements'], ['settings', 'Paramètres'], ['help', 'Aide']]) {
@@ -232,35 +241,114 @@
   }
   function editNote(note) {
     if (busy) return;
-    editing = note ? { ...note } : { fresh: true };
+    const draft = editing = note ? { ...note } : { fresh: true };
     const host = document.getElementById('editor'); host.replaceChildren();
     const box = card(note ? 'Modifier votre note' : 'Une nouvelle idée');
     const form = node('form');
+    let isPostit = Boolean(note?.pinned), currentNote = note, styleVersion = 0, strokes = [], alignment = 'center';
+    let active = null, pointer = null, styleReady = !note, uncertainCreate = false;
+    const choice = node('div', null, { class: 'actions', role: 'group', 'aria-label': 'Type de contenu' });
+    const plain = button('Note', () => choose(false));
+    const sticky = button('Post-it', () => choose(true));
+    put(form, node('label', 'Créer ou modifier'), put(choice, plain, sticky));
     const title = field(form, 'Titre', 'note-title', 'text', note?.title || '', MAX_TITLE_BYTES);
     const text = field(form, 'Texte', 'note-text', 'textarea', note?.text || '', MAX_TEXT_BYTES); text.required = true;
     form.append(node('p', 'Limites : titre de 160 octets et texte de 4 096 octets en UTF-8. Les accents et emoji peuvent occuper plusieurs octets.', { class: 'small muted' }));
-    const pin = node('input', null, { type: 'checkbox', id: 'note-pin' }); pin.checked = note?.pinned || false;
-    if (note) put(form, put(node('label', null, { class: 'checkbox', for: 'note-pin' }), pin, node('span', 'Épingler comme post-it')));
-    const save = node('button', 'Enregistrer', { type: 'submit', class: 'primary' });
+    const drawing = node('section', null, { class: 'postit-tools' });
+    const alignButtons = node('div', null, { class: 'actions', role: 'group', 'aria-label': 'Alignement du texte' });
+    const alignControls = [];
+    for (const [value, label] of [['left', 'Gauche'], ['center', 'Centré'], ['right', 'Droite']]) {
+      const control = button(label, () => { if (!busy) { alignment = value; updateAlignment(); } });
+      alignControls.push([value, control]); alignButtons.append(control);
+    }
+    function updateAlignment() {
+      for (const [value, control] of alignControls) control.setAttribute('aria-pressed', String(alignment === value));
+      text.setAttribute('data-alignment', alignment);
+    }
+    const canvas = node('canvas', null, { id: 'postit-canvas', width: '1024', height: '512', 'aria-label': 'Dessin du post-it, au doigt ou à la souris' });
+    const caption = node('p', 'Dessinez au doigt ou à la souris. Format 2:1 ; 32 traits et 400 points maximum. Le texte et le dessin seront conservés séparément.', { class: 'small muted', role: 'status' });
+    function redraw() {
+      const ctx = canvas.getContext?.('2d'); if (!ctx) return;
+      ctx.clearRect(0, 0, 1024, 512); ctx.strokeStyle = '#252e29'; ctx.fillStyle = '#252e29'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const stroke of strokes) {
+        if (!stroke.length) continue;
+        ctx.beginPath(); ctx.moveTo(stroke[0][0], stroke[0][1] / 2);
+        for (const point of stroke.slice(1)) ctx.lineTo(point[0], point[1] / 2);
+        ctx.stroke();
+        if (stroke.length === 1) { ctx.beginPath(); ctx.arc(stroke[0][0], stroke[0][1] / 2, 2, 0, Math.PI * 2); ctx.fill(); }
+      }
+    }
+    const pointCount = () => strokes.reduce((total, stroke) => total + stroke.length, 0);
+    function point(event) {
+      const rect = canvas.getBoundingClientRect();
+      return [Math.max(0, Math.min(1023, Math.round((event.clientX - rect.left) / rect.width * 1023))), Math.max(0, Math.min(1023, Math.round((event.clientY - rect.top) / rect.height * 1023)))];
+    }
+    function tooDetailed() { caption.textContent = 'Dessin trop détaillé : limite de 32 traits ou 400 points atteinte. Le dessin reste visible ; annulez un trait ou effacez pour continuer.'; }
+    canvas.addEventListener('pointerdown', event => {
+      if (busy || !styleReady || pointer !== null || (event.button !== undefined && event.button !== 0)) return;
+      event.preventDefault();
+      if (strokes.length >= 32 || pointCount() >= 400) { tooDetailed(); return; }
+      active = [point(event)]; strokes.push(active); pointer = event.pointerId;
+      canvas.setPointerCapture?.(pointer); redraw();
+    });
+    canvas.addEventListener('pointermove', event => {
+      if (event.pointerId !== pointer || !active || busy) return;
+      event.preventDefault(); const next = point(event), previous = active[active.length - 1];
+      // Spatial sampling keeps slow pointer streams bounded without changing stored originals.
+      if (Math.hypot(next[0] - previous[0], next[1] - previous[1]) < 6) return;
+      if (pointCount() >= 400) { tooDetailed(); return; }
+      active.push(next); redraw();
+    });
+    function endStroke(event) { if (event.pointerId === pointer) { pointer = null; active = null; } }
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(type, endStroke);
+    put(drawing, node('h3', 'Présentation du post-it'), alignButtons, canvas, caption,
+      put(node('div', null, { class: 'actions' }), button('Annuler le dernier trait', () => { if (!busy && pointer === null) { strokes.pop(); redraw(); } }), button('Effacer le dessin', () => { if (!busy && pointer === null) { strokes = []; redraw(); } })));
+    form.append(drawing);
+    function choose(value) {
+      if (busy) return;
+      isPostit = value; drawing.hidden = !value; text.required = !value;
+      plain.setAttribute('aria-pressed', String(!value)); sticky.setAttribute('aria-pressed', String(value));
+    }
+    choose(isPostit); updateAlignment();
+    const save = node('button', 'Enregistrer', { type: 'submit', class: 'primary' }); save.disabled = !styleReady;
     put(form, put(node('div', null, { class: 'actions' }), save, button('Annuler', () => { if (!busy) { editing = null; render(); } })));
+    const ownEditorGeneration = generation;
+    if (note) api(`/api/postits/${encodeURIComponent(note.id)}`).then(style => {
+      if (generation !== ownEditorGeneration || editing !== draft) return;
+      strokes = style.strokes; alignment = style.alignment; styleVersion = style.version;
+      styleReady = true; save.disabled = false; redraw(); updateAlignment();
+    }).catch(error => {
+      if (generation === ownEditorGeneration && editing === draft && csrf) feedback(`Dessin non chargé. ${errorText(error)} Fermez puis rouvrez l’éditeur pour réessayer.`, true);
+    });
     form.addEventListener('submit', async event => {
-      event.preventDefault(); if (busy) return;
+      event.preventDefault(); if (busy || !styleReady || pointer !== null || uncertainCreate) return;
       const data = { title: title.value, text: text.value };
       if (utf8Bytes(data.title) > MAX_TITLE_BYTES || utf8Bytes(data.text) > MAX_TEXT_BYTES) {
-        feedback('Note trop longue : le titre est limité à 160 octets et le texte à 4 096 octets en UTF-8. Réduisez le contenu ; votre texte reste dans l’éditeur et rien n’a été enregistré.', true);
-        return;
+        feedback('Note trop longue : le titre est limité à 160 octets et le texte à 4 096 octets en UTF-8. Réduisez le contenu ; votre texte reste dans l’éditeur et rien n’a été enregistré.', true); return;
       }
-      if (note) { data.pinned = pin.checked; data.version = note.version; }
       const ownGeneration = beginMutation(); save.disabled = true;
+      let creating = false;
       try {
-        await api(note ? `/api/notes/${encodeURIComponent(note.id)}` : '/api/notes', { method: note ? 'PATCH' : 'POST', body: data });
+        if (!currentNote) {
+          creating = true;
+          currentNote = await api('/api/notes', { method: 'POST', body: data });
+          creating = false;
+        } else {
+          currentNote = await api(`/api/notes/${encodeURIComponent(currentNote.id)}`, { method: 'PATCH', body: { ...data, pinned: currentNote.pinned, version: currentNote.version } });
+        }
+        if (isPostit) {
+          const style = await api(`/api/postits/${encodeURIComponent(currentNote.id)}`, { method: 'POST', body: { alignment, strokes, version: styleVersion } });
+          styleVersion = style.version;
+        }
+        if (currentNote.pinned !== isPostit) currentNote = await api(`/api/notes/${encodeURIComponent(currentNote.id)}`, { method: 'PATCH', body: { ...data, pinned: isPostit, version: currentNote.version } });
         if (ownGeneration !== generation) return;
-        editing = null; feedback('Note enregistrée.'); render();
+        editing = null; feedback(isPostit ? 'Post-it enregistré.' : 'Note enregistrée.'); render();
       } catch (error) {
         if (ownGeneration === generation && csrf) {
-          feedback(error.status === 409 ? 'Cette note a changé sur l’appareil. Votre texte reste ici : copiez-le avant de fermer cet éditeur, puis rechargez la note pour comparer. Aucune version n’a été écrasée.' : errorText(error), true);
-          if (error.status === 409) { save.disabled = true; save.textContent = 'Conflit : recharger la note'; }
-          else save.disabled = false;
+          uncertainCreate = creating && (error.name === 'AbortError' || error.status >= 500);
+          const partial = currentNote ? 'La note est enregistrée, mais la présentation ou l’épinglage reste à vérifier. Le brouillon et le dessin restent ici. ' : '';
+          feedback(partial + (uncertainCreate ? errorText(error) + ' Création non confirmée. Copiez votre texte avant de fermer, puis vérifiez la liste ; ne recréez pas la note sans vérifier.' : error.status === 409 ? 'Cette note ou ce dessin a changé. Copiez votre texte avant de fermer puis rechargez pour comparer. Aucune version n’a été écrasée.' : errorText(error)), true);
+          save.disabled = uncertainCreate || error.status === 409;
         }
       } finally { if (finishMutation(ownGeneration)) await refresh(); }
     });

@@ -58,5 +58,34 @@ int main() {
     assert(HttpAccess::cookieHeader("bad\r\nheader").empty());
     HttpAccess badGate(session, "http://192.168.4.1/evil");
     assert(badGate.check(r, 600013).status == 403);
+    // Opt-in local-password policy approves only an exact-origin JSON bootstrap;
+    // cookies, CSRF, expiry and local revocation still protect private routes.
+    CompanionSession localSession;
+    HttpAccess local(localSession, "http://192.168.4.1", PairingMode::LocalPassword, true);
+    HttpAccessRequest bootstrap{"POST", "/api/session/request", "192.168.4.1", "http://192.168.4.1", "same-origin", "", "", 2, true};
+    assert(local.check(bootstrap, 0).allowed());
+    bootstrap.origin = "https://attacker.example";
+    assert(local.check(bootstrap, 0).status == 403);
+    bootstrap.origin = "http://192.168.4.1"; bootstrap.json_content = false;
+    assert(local.check(bootstrap, 0).status == 403);
+    assert(local.requestSession(token, csrf, 1) == Result::Ok);
+    HttpAccessRequest privateRead{"GET", "/api/notes", "192.168.4.1", "", "same-origin", cookie, "", 0, false};
+    assert(local.check(privateRead, 2).allowed());
+    privateRead.cookie.clear(); assert(local.check(privateRead, 3).status == 401);
+    privateRead.cookie = cookie; privateRead.method = "DELETE"; privateRead.origin = "http://192.168.4.1";
+    assert(local.check(privateRead, 4).status == 403);
+    privateRead.csrf = csrf; assert(local.check(privateRead, 5).allowed());
+    privateRead.method = "GET";
+    assert(local.check(privateRead, 600000).allowed());
+    assert(local.check(privateRead, 600001).status == 401); // Poll never renews.
+    assert(local.requestSession(std::string(32, 'c'), std::string(32, 'd'), 600002) == Result::Ok);
+    assert(localSession.revoke(600003) == Result::Ok);
+    privateRead.cookie = "mc_session=" + std::string(32, 'c');
+    assert(local.check(privateRead, 600004).status == 401);
+    CompanionSession unprotectedSession;
+    HttpAccess unprotected(unprotectedSession, "http://192.168.4.1", PairingMode::LocalPassword);
+    assert(!unprotected.validPolicy());
+    assert(unprotected.requestSession(token, csrf, 0) == Result::Denied);
+    assert(unprotected.check(bootstrap, 0).status == 403);
     std::cout << "HTTP access boundary tests passed\n";
 }

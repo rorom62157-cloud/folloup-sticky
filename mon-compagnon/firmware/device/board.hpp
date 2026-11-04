@@ -19,8 +19,10 @@ bool beginBoard(std::string& error);
 // Mount existing FAT without formatting; create only kNotesDirectory.
 bool mountNotes(std::string& error);
 // Exactly 48000 readable bytes, row-major 100 bytes/row, MSB left, 1=white.
-// Synchronous full waveform; frame must remain stable until return.
-// fast selects the pinned reference forced-temperature OTP waveform. Use normal
-// for initial/periodic clearing; fast may leave lower contrast and ghosting.
+// Synchronous; frame must remain stable until return. Normal F7 establishes or
+// explicitly cleans the glass. fast=true uses verified old/new differential FF
+// without reset after a successful base; identical frames are skipped. Both RAM
+// planes cover the full panel (RAM windows do not bound physical drive).
+// Errors invalidate the retained shadow; the next call restores a normal base.
 bool display(const uint8_t* mono48000, std::string& error, bool fast = false);
 }  // namespace compagnon::device

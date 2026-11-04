@@ -1,8 +1,31 @@
-# Status — 2026-11-04 — first foundation milestone
+# Status — 2026-11-04
+
+## Version 0.4 — intégration et vérification
+
+État courant : 0.4 installée et verify-flash réussi ; tests hôte et démarrage contrôlés. Romain confirme sur l’appareil le menu de veille, la veille prolongée et le réveil, le bon bouton supérieur avec une voix claire, ainsi que le texte et le dessin du post-it créé depuis le web. Les sections suivantes décrivent l'historique.
+
+Cette version intègre Aujourd’hui, cartes/icônes/polices proportionnelles, agenda et RTC locaux, capture/lecture WAV, volume et gain micro, post-it enrichis et veille prolongée. Réglages est accessible depuis Aujourd’hui. Le nom et la clé Wi-Fi sont persistants et consultables sur l'appareil. À la demande explicite de Romain, la confirmation physique web est suspendue pour ce lot ; l'accès local sur l'AP protégé conserve session, origine, Host et CSRF.
+
+La 0.3 a été réellement installée et vérifiée après sauvegarde vérifiée des zones affectées ; table min_spiffs et application, sans réécriture NVS/bootloader/OTA, sans formatage SD. Journal réel : AUDIO_INIT PASS, RTC mise à l'heure, HTTP_SELF_TEST PASS avec réponses intégrales /, app.js, style.css et session. Capture WAV de 3,072 s relue pour métadonnées/statistiques, sans journaliser les échantillons. Romain a confirmé le nouveau design et l'ouverture de la page depuis son téléphone. Il a signalé un son faible ou déformé dans la 0.3 ; la qualité de cette ancienne version n’était donc pas validée. La correction 0.4 est confirmée ci-dessus.
+
+Corrections 0.4 : échelle de volume ES8311 en amplitude plafonnée à 0 dB (l'ancienne conversion pouvait aller de forte atténuation à +32 dB), ADC sans boost numérique, gain micro réglable. Bouton supérieur PMIC maintenu pour capture et relâchement pour sauvegarde ; inférieur GPIO0 pour retour. Annuler quitte le classement sans effacer le WAV. Icônes du bandeau 44 px. Appui inférieur long 1,5 s pour choix explicite de veille/arrêt ; extinction confirmée. Sommeil réel ESP32-S3 EXT1 GPIO4/5/6, pas de timer, relâchement stable avant entrée ; écran terminé, audio au repos et serveur/Wi-Fi arrêtés. Les paramètres de charge/rails/protections thermiques ne sont pas modifiés ; les deux coupures matérielles PWR sur maintien sont explicitement désactivées pour permettre la capture longue (voir audio-v03.md).
+
+Post-it : choix avant saisie web, titre gras et tailles titre/corps adaptées ensemble seulement dans ce mode, alignement gauche/centré/droite, lecture paginée pour texte long et dessin web au doigt/souris. Style versionné lié à l'identifiant de note, stockage privé séparé, 32 traits/400 points, limites strictes et sauvegardes avec conflits. Une erreur de chargement du dessin interdit sa réécriture aveugle ; un échec de sauvegarde partielle conserve le brouillon et évite une seconde création.
+
+Vérifications réellement exécutées : les 16 scripts test-*.sh, contrôleur UI réel extrait et exécuté avec fixtures, courses web Node, portes de sécurité de partition, échelle audio ; post-it/HTTP et métadonnées WAV également sous AddressSanitizer/UndefinedBehaviorSanitizer. Aperçus issus des vraies fonctions de rendu inspectés : mot unique, dessin, texte long paginé, alignement droit, menu veille et écran de sommeil. Compilation Arduino-ESP32 3.3.6 / ESP-IDF 5.5.2 : 1 777 491 octets programme, 47 800 octets statiques ; image 1 777 744 octets sous app0 0x1e0000. Table min_spiffs identique à la 0.3, contrôlée exactement avec MD5. L'image de retour 0.3 et la table ont été comparées à la flash réelle avant mise à jour ; identité S3 et flash 16 MB, chiffrement/Secure Boot désactivés vérifiés. Les artefacts privés, clés, sauvegardes et WAV restent hors Git.
+
+Le rafraîchissement différentiel SSD1677 et l'évitement des images identiques réduisent les clignotements ; transmission des plans complets, sans promesse d'activation physique limitée à un rectangle. Aucun chiffre d'autonomie revendiqué. Google/Gemini, synchronisation Google, rappels actifs datés, veille légère, PDF/EPUB et météo/capteurs restent à intégrer. Guide : device-0.4.md.
+
+
+Installation finale 0.4 : application seule écrite à 0x10000, empreinte relue conforme ; table inchangée également vérifiée. Démarrage réel : POWER_HOLD_CONFIG PASS, AUDIO_INIT PASS, READY 0.4 ; audio Idle, RTC valide, AP stable, PMIC disponible et compteur de réveils profonds 0 avant premier essai. HTTP_SELF_TEST PASS : / 903/903 octets, app.js 33413/33413, style.css 5497/5497 et session 200. Les statistiques d'un WAV existant sont lisibles ; cela ne prouve pas sa qualité audible. Aucun fichier personnel effacé ou formaté. Journaux et images de retour privés sous artifacts/.
+
+Accord explicite reçu pour publier les 65 fichiers de la 0.4 dans rorom62157-cloud/folloup-sticky, branche work/mon-compagnon-v1, dossier mon-compagnon/, y compris le suivi avec chemins locaux et informations matérielles, sans clé/audio/sauvegarde flash. Les trois recettes physiques ci-dessus sont des observations utilisateur ; aucun courant de sommeil, réveil sur les trois contacts séparément ni résistance aux coupures SD n’est déduit de ce retour.
+
+Publication 0.4 : implémentation locale `45d2c74cd7014b0fbd3f51ba9d81c8640dda5c41`. Base distante 0.2 vérifiée `ceb73d6b7b29a72572634f3cc8a30ed99afc47b1`, arbre `d8c3e1e2a1da458bd2c7eb35b7ce9e5cbc90eca4`. Le lot de 65 fichiers est préparé via API uniquement sous mon-compagnon/, en conservant les autres chemins et l’ascendance distante ; mise à jour avec comparaison du head attendu, sans force. Les reçus de publication et les empreintes privées sont conservés hors dépôt dans compagnon-reprise/. Aucun secret, WAV ni sauvegarde flash dans ce lot. L’identité distante finale est donnée dans le reçu après réussite de la mise à jour de branche.
 
 ## Version0.2 — portrait, menus et usages locaux
 
-Cette section est l'état courant ; les lots alpha ci-dessous restent historiques.
+Cette section décrit la version 0.2 ; les versions plus récentes sont présentées au début du document.
 L'application ouvre un véritable Accueil et un menu Applications : Notes,
 Post-it, Tâches, Fichiers texte, Compagnon web, Réglages et Aide. Création avec
 un titre et un texte, renommage, édition, épinglage et suppression confirmée

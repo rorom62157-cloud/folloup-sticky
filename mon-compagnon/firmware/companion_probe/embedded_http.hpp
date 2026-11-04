@@ -1,13 +1,16 @@
 #pragma once
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include "esp_http_server.h"
 #include "esp_random.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "http_access.hpp"
 #include "note_http.hpp"
+#include "postit_http.hpp"
 #include "web_assets.hpp"
 
 namespace compagnon {
@@ -16,8 +19,10 @@ namespace compagnon {
 // return 501 rather than a fabricated application state.
 class EmbeddedHttp {
 public:
-    explicit EmbeddedHttp(std::string origin, NoteHttp* notes = nullptr)
-        : access_(session_, std::move(origin)), notes_(notes) {
+    explicit EmbeddedHttp(std::string origin, NoteHttp* notes = nullptr,
+                          PairingMode mode = PairingMode::Physical, bool local_password_authenticated = false,
+                          PostitHttp* postits = nullptr)
+        : access_(session_, std::move(origin), mode, local_password_authenticated), notes_(notes), postits_(postits) {
         mutex_ = xSemaphoreCreateMutex();
         notes_mutex_ = xSemaphoreCreateMutex();
     }
@@ -25,12 +30,14 @@ public:
     EmbeddedHttp(const EmbeddedHttp&) = delete;
     EmbeddedHttp& operator=(const EmbeddedHttp&) = delete;
     esp_err_t begin() {
-        if (!mutex_ || !notes_mutex_ || server_) return ESP_ERR_INVALID_STATE;
+        if (!mutex_ || !notes_mutex_ || server_ || !access_.validPolicy()) return ESP_ERR_INVALID_STATE;
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.max_req_hdr_len = 2048;
         config.max_uri_len = 256;
         config.max_resp_headers = 12;
-        config.max_open_sockets = 3;
+        // A browser can fetch HTML/CSS/JS and speculative connections together.
+        // Keep the SDK seven-client budget rather than evicting a live asset at three.
+        config.max_open_sockets = 7;
         config.lru_purge_enable = true;
         config.recv_wait_timeout = 2;
         config.send_wait_timeout = 2;
@@ -44,6 +51,9 @@ public:
             result = httpd_register_uri_handler(server_, &route);
             if (result != ESP_OK) { httpd_stop(server_); server_ = nullptr; return result; }
         }
+        ESP_LOGI("CompanionHTTP", "ready port=%u sockets=%u policy=%s",
+                 config.server_port, config.max_open_sockets,
+                 access_.pairingMode() == PairingMode::Physical ? "physical" : "local-password");
         return ESP_OK;
     }
     // Invoke only from debounced physical commands; never expose as HTTP routes.
@@ -86,6 +96,14 @@ public:
         xSemaphoreGive(notes_mutex_);
         return result;
     }
+    template<class Operation> NoteResult localPostits(Operation operation) {
+        if (!postits_ || xSemaphoreTake(notes_mutex_, pdMS_TO_TICKS(20)) != pdTRUE)
+            return NoteResult::NotReady;
+        auto result = operation(postits_->localService());
+        xSemaphoreGive(notes_mutex_);
+        return result;
+    }
+
 private:
     static Millis now() { return static_cast<Millis>(esp_timer_get_time() / 1000); }
     bool lock() { return mutex_ && xSemaphoreTake(mutex_, pdMS_TO_TICKS(20)) == pdTRUE; }
@@ -132,12 +150,28 @@ private:
         httpd_resp_set_hdr(req, "Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
         httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
         if (!r.cookie.empty()) httpd_resp_set_hdr(req, "Set-Cookie", r.cookie.c_str());
-        auto result = httpd_resp_send(req, r.asset ? r.asset : r.body.data(), r.asset ? r.asset_size : r.body.size());
-        return r.close ? ESP_FAIL : result;
+        // Close after every response: otherwise abandoned browser keep-alive sockets
+        // compete with parallel assets and force the LRU to evict active transfers.
+        httpd_resp_set_hdr(req, "Connection", "close");
+        const auto size = r.asset ? r.asset_size : r.body.size();
+        esp_err_t result = ESP_OK;
+        if (r.asset) {
+            // Bound each SDK write, including app.js, on a slow AP client.
+            // This remains a synchronous handler; socket writes hold no UI mutex.
+            for (std::size_t offset = 0; result == ESP_OK && offset < size; offset += 1024)
+                result = httpd_resp_send_chunk(req, r.asset + offset, std::min<std::size_t>(1024, size - offset));
+            if (result == ESP_OK) result = httpd_resp_send_chunk(req, nullptr, 0);
+        } else result = httpd_resp_send(req, r.body.data(), size);
+        // No URLs, headers, capabilities, private contents or credentials in logs.
+        ESP_LOGI("CompanionHTTP", "response status=%d bytes=%u send=%s", r.code,
+                 static_cast<unsigned>(size), esp_err_to_name(result));
+        // ESP-IDF closes a handler's session on a non-OK return; the HTTP message
+        // above has already been completed (including final chunk when needed).
+        return ESP_FAIL;
     }
     static esp_err_t dispatch(httpd_req_t* req) {
         auto& self = *static_cast<EmbeddedHttp*>(req->user_ctx);
-        if (std::strncmp(req->uri, "/api/notes", 10) == 0) return self.dispatchNotes(req);
+        if (std::strncmp(req->uri, "/api/notes", 10) == 0 || std::strncmp(req->uri, "/api/postits/", 13) == 0) return self.dispatchNotes(req);
         // Receive only the bounded bootstrap body here, without holding UI/session
         // mutex. Authorization is re-evaluated after receive before any mutation.
         bool bootstrap_body = false;
@@ -172,7 +206,8 @@ private:
         auto allowed = authorizeNotes(req);
         xSemaphoreGive(mutex_);
         if (!allowed.allowed()) return send(req, error(allowed.status, req->content_len != 0));
-        if (!notes_) return send(req, error(501, req->content_len != 0));
+        const bool postit = std::strncmp(req->uri, "/api/postits/", 13) == 0;
+        if (postit ? !postits_ : !notes_) return send(req, error(501, req->content_len != 0));
         std::string body(req->content_len, '\0');
         std::size_t received = 0;
         while (received < body.size()) {
@@ -191,8 +226,15 @@ private:
         const auto split = uri.find('?');
         const char* method = req->method == HTTP_GET ? "GET" : req->method == HTTP_POST ? "POST" :
                              req->method == HTTP_PATCH ? "PATCH" : "DELETE";
-        auto result = notes_->handle(method, uri.substr(0, split),
+        auto result = postit ? postits_->handle(method, uri.substr(0, split),
+            split == std::string::npos ? std::string{} : uri.substr(split + 1), body) : notes_->handle(method, uri.substr(0, split),
             split == std::string::npos ? std::string{} : uri.substr(split + 1), body);
+        if (!postit && req->method == HTTP_DELETE && result.status == 204 && postits_) {
+            // Note deletion already committed. Cleanup failure is not retryable note deletion.
+            const auto cleanup = postits_->eraseForNote(uri.substr(11, split == std::string::npos ? std::string::npos : split - 11));
+            if (cleanup != NoteResult::Ok && cleanup != NoteResult::NotFound)
+                result = {503, R"({"error":"partial_delete","message":"Note supprimée ; nettoyage du dessin à vérifier sur l’appareil."})", true};
+        }
         xSemaphoreGive(notes_mutex_);
         if (result.mutated && lock()) {
             access_.acceptedMutation(header(req, "Cookie"), now());
@@ -233,9 +275,10 @@ private:
             if (result != Result::Ok) return error(409);
             pending_cookie_ = "mc_session=" + token;
             ++pending_generation_; if (!pending_generation_) ++pending_generation_;
-            Response response; response.code = 202;
+            Response response; response.code = access_.pairingMode() == PairingMode::Physical ? 202 : 200;
             response.cookie = HttpAccess::cookieHeader(token);
-            response.body = R"({"state":"pending"})";
+            response.body = access_.pairingMode() == PairingMode::Physical ?
+                R"({"state":"pending","mode":"physical"})" : R"({"state":"approved","mode":"local-password"})";
             return response;
         }
         if (req->method == HTTP_GET && path == "/api/session" && !has_body) {
@@ -243,7 +286,8 @@ private:
             const char* label = state == SessionState::Approved ? "approved" : state == SessionState::Pending ?
                 "pending" : state == SessionState::Expired ? "expired" : "denied";
             Response response;
-            response.body = "{\"state\":\"" + std::string(label) + "\"";
+            response.body = "{\"state\":\"" + std::string(label) + "\",\"mode\":\"" +
+                (access_.pairingMode() == PairingMode::Physical ? "physical" : "local-password") + "\"";
             if (state == SessionState::Approved) response.body += ",\"csrf\":\"" + access_.approvedCsrf(cookie, now()) + "\"";
             response.body += "}"; return response;
         }
@@ -264,6 +308,7 @@ private:
     CompanionSession session_;
     HttpAccess access_;
     NoteHttp* notes_ = nullptr; // Lifetime exceeds server; exclusive store ownership while active.
+    PostitHttp* postits_ = nullptr;
     SemaphoreHandle_t notes_mutex_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
     httpd_handle_t server_ = nullptr;

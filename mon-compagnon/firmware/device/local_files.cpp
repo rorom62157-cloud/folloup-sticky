@@ -51,7 +51,7 @@ bool componentValid(const std::string& part) {
 }
 bool privateName(const std::string& part) {
     const auto name = lower(part);
-    return name == "compagnon-notes" || name == "compagnon-tasks";
+    return name.rfind("compagnon-",0)==0;
 }
 int inspect(const std::string& path, struct stat& info) {
 #ifdef ESP_PLATFORM

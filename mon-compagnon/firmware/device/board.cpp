@@ -25,6 +25,8 @@ constexpr gpio_num_t kReset = GPIO_NUM_46, kBusy = GPIO_NUM_3;
 constexpr std::size_t kChunk = 1024;
 spi_device_handle_t screen = nullptr;
 uint8_t* staging = nullptr;
+uint8_t* previous = nullptr;
+bool base_valid = false;
 sdmmc_card_t* card = nullptr;
 bool ready = false;
 
@@ -75,7 +77,7 @@ esp_err_t cursor() {
     esp_err_t result = command(0x4E, x, sizeof(x));
     return result == ESP_OK ? command(0x4F, y, sizeof(y)) : result;
 }
-esp_err_t initializePanel(bool fast) {
+esp_err_t initializePanel() {
     pauseMs(10);
     gpio_set_level(kReset, 0);
     pauseMs(2);
@@ -102,11 +104,19 @@ esp_err_t initializePanel(bool fast) {
         result = command(step.cmd, step.data, step.size);
         if (result != ESP_OK) return result;
     }
-    if (fast) {
-        // Pinned FolloUp InitFull(true): forced temperature selects fast OTP.
-        // Paired with 0xD7 below, which does not reload the sensor temperature.
-        const uint8_t fastTemperature[] = {0x6A};
-        result = command(0x1A, fastTemperature, sizeof(fastTemperature));
+    return cursor();
+}
+esp_err_t initializePartial() {
+    // Pinned InitPartial: retain the established base and never reset the IC.
+    const uint8_t output[] = {0xDF, 0x01, 0x02}, entry[] = {0x01};
+    const uint8_t x[] = {0x00, 0x00, 0x1F, 0x03}, y[] = {0xDF, 0x01, 0x00, 0x00};
+    const uint8_t border[] = {0x80}, temperature[] = {0x80};
+    struct Step { uint8_t cmd; const uint8_t* data; std::size_t size; };
+    const Step steps[] = {{0x01, output, sizeof(output)}, {0x11, entry, sizeof(entry)},
+        {0x44, x, sizeof(x)}, {0x45, y, sizeof(y)},
+        {0x3C, border, sizeof(border)}, {0x18, temperature, sizeof(temperature)}};
+    for (const auto& step : steps) {
+        const auto result = command(step.cmd, step.data, step.size);
         if (result != ESP_OK) return result;
     }
     return cursor();
@@ -137,6 +147,9 @@ bool beginBoard(std::string& error) {
     if (!staging) staging = static_cast<uint8_t*>(heap_caps_malloc(
         kChunk, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
     if (!staging) { error = "Memoire transfert ecran insuffisante"; return false; }
+    if (!previous) previous = static_cast<uint8_t*>(heap_caps_malloc(
+        kFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!previous) { error = "Memoire image precedente insuffisante"; return false; }
     spi_bus_config_t bus = {};
     bus.mosi_io_num = GPIO_NUM_12;
     bus.miso_io_num = -1;
@@ -196,15 +209,33 @@ bool mountNotes(std::string& error) {
 bool display(const uint8_t* frame, std::string& error, bool fast) {
     error.clear();
     if (!ready || !frame) { error = "Ecran non initialise ou image absente"; return false; }
-    if (!check(initializePanel(fast), "Initialisation SSD1677", error)) return false;
-    // Reset the cursor explicitly for each plane rather than relying on wraparound.
-    if (!check(command(0x24, frame, kFrameBytes), "Image ecran", error)) return false;
-    if (!check(cursor(), "Curseur ecran", error)) return false;
-    if (!check(command(0x26, frame, kFrameBytes), "Base ecran", error)) return false;
-    // Pinned FolloUp TurnOnDisplayFast/TurnOnDisplay; no custom LUT.
-    const uint8_t full[] = {static_cast<uint8_t>(fast ? 0xD7 : 0xF7)};
-    if (!check(command(0x22, full, sizeof(full)), "Commande rafraichissement", error)) return false;
-    if (!check(command(0x20), "Activation ecran", error)) return false;
-    return check(busy(), "Attente ecran (10 s maximum)", error);
+    // A known glass shadow is necessary before differential drive. After any
+    // transfer/BUSY failure it is invalidated so the next attempt restores a base.
+    if (fast && base_valid && std::memcmp(previous, frame, kFrameBytes) == 0) return true;
+    const bool differential = fast && base_valid;
+    base_valid = false;
+    if (!differential && !check(initializePanel(), "Initialisation SSD1677", error)) return false;
+    if (differential) {
+        // Pinned InitPartial + RefreshPartialFullScreen. The SSD1677 drive is
+        // whole-panel; RAM windows cannot limit activation to a dirty rectangle.
+        // Rewrite full OLD/NEW planes so previous changed regions cannot recur.
+        if (!check(initializePartial(), "Initialisation differentielle", error) ||
+            !check(command(0x26, previous, kFrameBytes), "Ancienne image ecran", error)) return false;
+    }
+    if (!check(cursor(), "Curseur nouvelle image", error) ||
+        !check(command(0x24, frame, kFrameBytes), "Image ecran", error)) return false;
+    if (!differential) {
+        if (!check(cursor(), "Curseur base ecran", error) ||
+            !check(command(0x26, frame, kFrameBytes), "Base ecran", error)) return false;
+    }
+    // Normal OTP F7 only for startup, explicit cleaning or recovery after error.
+    // FF is the verified mode-2 old/new differential waveform, no invented LUT.
+    const uint8_t update[] = {static_cast<uint8_t>(differential ? 0xFF : 0xF7)};
+    if (!check(command(0x22, update, sizeof(update)), "Commande rafraichissement", error) ||
+        !check(command(0x20), "Activation ecran", error) ||
+        !check(busy(), "Attente ecran (10 s maximum)", error)) return false;
+    std::memcpy(previous, frame, kFrameBytes);
+    base_valid = true;
+    return true;
 }
 }  // namespace compagnon::device
