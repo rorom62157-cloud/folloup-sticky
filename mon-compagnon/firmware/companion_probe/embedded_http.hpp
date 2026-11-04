@@ -47,19 +47,44 @@ public:
         return ESP_OK;
     }
     // Invoke only from debounced physical commands; never expose as HTTP routes.
-    Result physicalDecision(bool accept) {
+    Result physicalDecision(bool accept, std::uint64_t expected_request = 0) {
         if (!lock()) return Result::Busy;
+        if (expected_request && (expected_request != pending_generation_ ||
+            access_.sessionState(pending_cookie_, now()) != SessionState::Pending)) {
+            xSemaphoreGive(mutex_); return Result::InvalidState;
+        }
         auto result = accept ? session_.physicalApprove(now()) : session_.physicalReject(now());
+        if (!accept && result == Result::Ok) { request_cooldown_until_ = now() + 60000; pending_cookie_.clear(); }
         xSemaphoreGive(mutex_); return result;
     }
     Result revoke() {
         if (!lock()) return Result::Busy;
         auto result = session_.revoke(now()); xSemaphoreGive(mutex_); return result;
     }
-    bool pending() {
-        if (!lock()) return false;
-        const bool result = !pending_cookie_.empty() && access_.sessionState(pending_cookie_, now()) == SessionState::Pending;
+    std::uint64_t pendingRequestId() {
+        if (!lock()) return 0;
+        const auto state = pending_cookie_.empty() ? SessionState::Denied : access_.sessionState(pending_cookie_, now());
+        if (state == SessionState::Expired) { request_cooldown_until_ = now() + 60000; pending_cookie_.clear(); }
+        const auto result = state == SessionState::Pending ? pending_generation_ : 0;
         xSemaphoreGive(mutex_); return result;
+    }
+    bool pending() { return pendingRequestId() != 0; }
+    bool approved() {
+        if (!lock()) return false;
+        const bool result = !pending_cookie_.empty() && access_.sessionState(pending_cookie_, now()) == SessionState::Approved;
+        xSemaphoreGive(mutex_); return result;
+    }
+    // Physical UI shares the HTTP store mutex. Never access the borrowed store
+    // directly while this server exists. Operation must not call network/UI code.
+    template<class Operation> NoteServiceResponse localNotes(Operation operation) {
+        if (!notes_ || xSemaphoreTake(notes_mutex_, pdMS_TO_TICKS(20)) != pdTRUE) {
+            NoteServiceResponse result; result.result = NoteResult::NotReady;
+            result.status = 503; result.message = "Stockage occupé ou indisponible.";
+            return result;
+        }
+        auto result = operation(notes_->localService());
+        xSemaphoreGive(notes_mutex_);
+        return result;
     }
 private:
     static Millis now() { return static_cast<Millis>(esp_timer_get_time() / 1000); }
@@ -95,7 +120,7 @@ private:
     }
     static esp_err_t send(httpd_req_t* req, const Response& r) {
         const char* status = r.code == 200 ? "200 OK" : r.code == 201 ? "201 Created" :
-            r.code == 404 ? "404 Not Found" : r.code == 507 ? "507 Insufficient Storage" : r.code == 202 ? "202 Accepted" :
+            r.code == 429 ? "429 Too Many Requests" : r.code == 404 ? "404 Not Found" : r.code == 507 ? "507 Insufficient Storage" : r.code == 202 ? "202 Accepted" :
             r.code == 204 ? "204 No Content" : r.code == 400 ? "400 Bad Request" :
             r.code == 401 ? "401 Unauthorized" : r.code == 403 ? "403 Forbidden" :
             r.code == 409 ? "409 Conflict" : r.code == 413 ? "413 Content Too Large" :
@@ -195,10 +220,19 @@ private:
         if (req->method == HTTP_POST && path == "/api/session/request") {
             // Query variants deliberately rejected; the body was not consumed.
             if (query != std::string::npos || !bootstrap_body) return error(400, has_body);
+            if (!pending_cookie_.empty() && access_.sessionState(pending_cookie_, now()) == SessionState::Expired) {
+                request_cooldown_until_ = now() + 60000; pending_cookie_.clear();
+            }
+            if (now() < request_cooldown_until_) {
+                auto response = error(429);
+                response.body = R"({"error":"request_cooldown","message":"Patientez une minute après un refus ou une expiration."})";
+                return response;
+            }
             auto token = capability(); auto csrf = capability();
             auto result = access_.requestSession(token, csrf, now());
             if (result != Result::Ok) return error(409);
             pending_cookie_ = "mc_session=" + token;
+            ++pending_generation_; if (!pending_generation_) ++pending_generation_;
             Response response; response.code = 202;
             response.cookie = HttpAccess::cookieHeader(token);
             response.body = R"({"state":"pending"})";
@@ -234,5 +268,7 @@ private:
     SemaphoreHandle_t mutex_ = nullptr;
     httpd_handle_t server_ = nullptr;
     std::string pending_cookie_;
+    std::uint64_t pending_generation_ = 0;
+    Millis request_cooldown_until_ = 0;
 };
 } // namespace compagnon

@@ -55,3 +55,11 @@ Les routes de notes peuvent désormais être raccordées à un NoteStore persist
 par `NoteHttp` ; le web accepte un mode notes seul. Voir l'état courant de
 `docs/status.md` pour les conditions d'intégration. Aucun probe n'est une image
 applicative à flasher.
+
+
+## Première alpha appareil
+
+`sh scripts/build-device.sh` construit maintenant la vraie cible notes locale
+(écran, boutons, SD, web sous accord physique). Guide et limites :
+[docs/device-alpha.md](docs/device-alpha.md). Ce n'est pas encore la V1 complète.
+Le statut d'installation et les observations réelles sont dans docs/status.md.

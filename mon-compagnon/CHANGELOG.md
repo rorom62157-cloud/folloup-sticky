@@ -35,3 +35,14 @@ Service notes, JSON strict, dispatch CRUD versionné et raccordement transport
 ESP-IDF avec backend explicite. Mode notes seul dans le web quand l'état complet
 est indisponible. Tests de persistance sur fichiers réels, autorisation, Unicode,
 conflits et courses de repli web ; compilation ESP32-S3 réussie. Aucun flash.
+
+
+## Alpha notes appareil
+
+Cible applicative distincte des probes : écran SSD1677 GPLv3 attribué, rendu
+monochrome borné, clavier/navigation physiques, montage SD sans formatage,
+notes/post-it et serveur local à autorisation physique. Protection contre accord
+avant affichage, demandes répétées et affichage trompeur de clé Wi-Fi corrigés
+après revue. Compilation et tests hôte passants. Après reconnexion, sauvegarde vérifiée des
+secteurs remplacés, installation/vérification réussie, démarrage et test SD
+réel passants ; menu confirmé visible par Romain.

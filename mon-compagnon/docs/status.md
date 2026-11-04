@@ -1,5 +1,56 @@
 # Status — 2026-11-04 — first foundation milestone
 
+## Alpha notes sur appareil — 4 novembre 2026 — installée et premier essai réussi
+
+Nouvelle vraie cible : firmware/device/device.ino ; distincte du diagnostic et
+des probes. Écran SSD1677, boutons, montage SDMMC FAT sans formatage, notes
+persistantes, clavier physique simple, lecture paginée, post-it, suppression
+confirmée et AP Wi-Fi privé avec accord physique web sont raccordés.
+
+Pilotes carte et rendu réalisés sur missions bornées gpt-6.1-sol/medium ; revue
+indépendante gpt-6.1-sol/high. Corrections de revue : casse des vrais identifiants
+Wi-Fi adaptée au rendu majuscule ; accord lié à la demande affichée, seulement
+après affichage réussi + relâchement + nouvel appui ; pause60s après refus ou
+expiration ; indicateur permanent WEB ACTIF/FERME. HTTP et commandes UI utilisent
+le même mutex de stockage. La revue finale n'a trouvé aucun blocage concret
+restant dans ces changements.
+
+Construction réelle sur ce Mac : Arduino CLI1.5.0, core3.3.6, SDK ESP-IDF5.5.2,
+esptool5.1.0. Image : 1088947 octets programme /44560 statiques ; application
+binaire1089088 octets, sous app0=0x140000. Bootloader et app ESP32-S3/16MB/DIO80
+inspectés, checksum/hash internes valides ; table default contrôlée.
+Tests notes HTTP, rendu et courses web réussis ; rendu également ASan/UBSan.
+Les versions plus récentes citées ci-dessous concernent l'autre ordinateur.
+
+### Observations matérielles réellement acquises
+
+- Carte réidentifiée USB/eFuse ; flash16MB, Secure Boot et chiffrement désactivés.
+- Après des erreurs USB, Romain a débranché/rebranché la carte. Lecture115200 en
+  conservant le stub entre opérations : sauvegarde des secteurs0x0..0x120000
+  réussie et verify-flash correspondant réussi. Cela couvre tous les secteurs
+  remplacés, mais ne constitue ni une sauvegarde16Mo complète ni une sauvegardeSD.
+  Table actuelle comparée octet pour octet à celle de l'alpha : identique.
+- Images séparées installées sans erase-flash : bootloader0x0, table0x8000,
+  boot_app0 de ce core0xe000, app0x10000. Les quatre verify-flash réussis, puis
+  redémarrage watchdog. Image fusionnée jamais utilisée. Originaux privés et
+  empreintes conservés sous artifacts/device-recovery-after-replug, hors Git.
+- Journal série réel : « MON COMPAGNON ALPHA NOTES - not diagnostic », puis
+  « READY alpha notes; SD mounted without format; web requires physical approval. »
+- Commande USB `t` réellement exécutée : « SD_TEST PASS: create + fsync + recovery
+  + readback + delete ». Test sous mutex : note temporaire créée, autre NoteStore
+  récupéré sur les fichiers et texte relu, puis suppression de cette seule note.
+- Romain confirme l'affichage « Le menu MON COMPAGNON - ALPHA NOTES ».
+- L'ouverture du moniteur provoque encore un USB_UART_CHIP_RESET ; elle renouvelle
+  donc le réseau/clé de l'AP et n'est pas une surveillance sans redémarrage.
+
+Premiers résultats : application démarrée sur carte, rendu visible confirmé et
+stockage de notes réellement exercé. Navigation physique, clavier, post-it,
+parcours web complet, conflits web/physique et persistance après redémarrage
+restent à parcourir avec Romain selon docs/device-alpha.md. Pas de preuve de
+résistance aux coupures/removal, mémoire au volume maximal, PMIC ou autonomie.
+Audio, Google, Gemini et veilles sont explicitement absents de cette alpha.
+Les fichiers SD hors répertoire privé ne sont ni parcourus ni modifiés.
+
 ## État courant — reprise logicielle du 4 novembre 2026 sur ce Mac
 
 Cette section prévaut sur les anciens blocages chronologiques ci-dessous.
